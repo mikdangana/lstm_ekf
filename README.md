@@ -8,3 +8,13 @@ Further calibration could be done on demand whenever device conditions are perce
 
 The EKF is used here to track system performance parameters and tune resource and configuration parameters via an LQN system model of the system. System parameters include operating system metrics like CPU utilization, disk time and utilization, number of processes, and system memory utilization. 
 
+# Requirements
+
+. Tensorflow, EKF python libraries
+. Tested on Amazon AWS Deep Learning AMI (Ubuntu) Version 11.0 (ami-c47c28bc)
+
+# How to run
+
+python lstm_ekf.py 
+
+Feel free to email me if there are any issues. Enjoy!
