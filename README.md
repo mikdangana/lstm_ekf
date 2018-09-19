@@ -10,11 +10,11 @@ The EKF is used here to track system performance parameters and tune resource an
 
 # Requirements
 
-. Tensorflow, EKF python libraries
-. Tested on Amazon AWS Deep Learning AMI (Ubuntu) Version 11.0 (ami-c47c28bc)
+* Tensorflow, EKF python libraries
+* Tested on Amazon AWS Deep Learning AMI (Ubuntu) Version 11.0 (ami-c47c28bc)
 
 # How to run
 
-python lstm_ekf.py 
+* python lstm_ekf.py 
 
 Feel free to email me if there are any issues. Enjoy!
