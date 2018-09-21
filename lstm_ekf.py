@@ -1,10 +1,14 @@
 import tensorflow as tf
 import os
+from numpy import resize
 
 def build_dataset():
-    proc = os.popen('top -b -n 2 | grep -v Tasks').read()
-    print(proc)
-    print(len(proc.split("\n")))
+    cmd = "top -b -n 2 | grep -v Tasks | grep -v top | grep -v %Cpu | grep -v KiB | grep -v PID | grep [0-9] | awk '{print $1, $3,$4,$5,$6,$7,$9,$10,$11}'"
+    pstats = os.popen(cmd).read()
+    print(pstats)
+    print(resize(pstats.split(), (250,9)))
+    print(len(pstats.split("\n")))
+    print(len(pstats.split()))
 
 def RNN(x, weights, biases):
 
