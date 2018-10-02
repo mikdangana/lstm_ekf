@@ -1,5 +1,6 @@
 import tensorflow as tf
 import os
+from filterpy.kalman import ExtendedKalmanFilter
 from numpy import resize, zeros, float32
 
 n_input = 8
@@ -11,7 +12,7 @@ def build_dataset():
     print(len(pstats.split()))
     pstatsf = list(map(lambda i: float32(i) if i != "rt" else 0, pstats.split()))
     print("type = " + str(type(pstatsf[0])))
-    x = tf.Variable( resize(pstatsf, (250,n_input)), name="inputs" )
+    x = tf.Variable( resize(pstatsf, (250,n_input)), name="inputs", dtype=tf.float32 )
     return x
 
 def RNN(x, weights, biases):
@@ -57,9 +58,10 @@ biases = {
 
 
 pred = RNN(x, weights, biases)
+print("pred = " + str(pred))
 
 # TODO: implement EKF-based cost function
-#cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
 #optimizer = tf.train.RMSPropOptimizer(learning_rate=0.001).minimize(cost)
 
 #y = zeros([vocab_size], dtype=float)
