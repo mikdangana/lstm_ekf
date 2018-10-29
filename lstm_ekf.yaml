@@ -1,0 +1,31 @@
+# Config file specifying application/domain specific commands and scripts
+variables:
+    - solr-host: 
+        - 127.0.0.1
+    - cassandra-host: 
+        - 127.0.0.1
+    - lqn-model: /home/users/michael/Downloads/woodside/system1.lqn
+
+solr-url: &solr-url https://127.0.0.1:8983/solr
+cassandra-home: &cassandra-home /home/ubuntu/apache-cassandra
+
+provision-cmds: 
+    solr: *solr-url/solr/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr
+    db: 
+        - sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' *cassandra-home/conf/cassandra.yaml
+        - *cassandra-home/bin/stop
+        - *cassandra-home/bin/start 
+        # Figure out how to use JMX rather than cassandra stop/start
+
+deprovision-cmds: 
+    solr-rem-node: *solr-url/solr/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>
+    db-rem-node: 
+        - sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' *cassandra-home/conf/cassandra.yaml
+        - *cassandra-home/bin/stop
+        - *cassandra-home/bin/start 
+        # Figure out how to use JMX rather than cassandra stop/start
+
+model-update-cmd: \
+    sed -i 's/nUsers\s*=\s*\[?[0-9,]\]?*/<param0> = <param1>/' *lqn-model
+
+model-solve-cmd: lqns *lqn-model
