@@ -3,7 +3,7 @@ import os, re
 import yaml, logging, logging.handlers
 from filterpy.kalman import ExtendedKalmanFilter
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, inner, divide, subtract
+from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
 from functools import reduce
 from random import random
@@ -28,7 +28,6 @@ def measurements():
         "grep -v KiB | grep -v PID | grep [0-9] | " + \
         "awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'"
     pstats = do(cmd)
-    logger.info(pstats)
     logger.info(len(pstats.split()))
     pstatsf = list(map(lambda i: float32(i) if i!="rt" else 0, pstats.split()))
     logger.info("type = " + str(type(pstatsf[0])))
@@ -95,16 +94,17 @@ def predict_coeffs(model, newdata):
 
 
 def get_baseline(model, sample_size):
-    (baseline, ekf, msmts, history) = ([], None, None, [])
+    (baseline, ekf, msmts, history) = ([], None, [], [])
     for i in range(0, sample_size):
         new_msmts = measurements()
-        if msmts:
+        logger.info("i = " + str(i) + ", new_msmts = " + str(shape(new_msmts)))
+        if len(msmts):
             (best_coeffs, best_accuracy) = ([], 0)
             if not ekf:
                 coeffs = predict_coeffs(model, msmts)
-                ekf = build_ekf(coeffs, history)
+                ekf = build_ekf(coeffs, [msmts]) # history)
             elif len(history):
-                logger.info("get_baseline.history = " + str(history))
+                logger.info("get_baseline.history = " + str(shape(history)))
                 update(ekf, history)
             baseline.append(ekf_accuracy(ekf, new_msmts))
         msmts = new_msmts
@@ -114,17 +114,19 @@ def get_baseline(model, sample_size):
 
 # Generates training labels by a bootstrapping/active-learning approach 
 def bootstrap_labels(model):
-    (labels, ekf, msmts, history, sample_size) = ([], None, None, [], 100)
+    (labels, ekf, msmts, history, sample_size) = ([], None, [], [], 10)
     ekf_baseline = get_baseline(model, sample_size)
     for i in range(0, sample_size):
         new_msmts = measurements()
-        if msmts:
+        logger.info("i = " + str(i) + ", new_msmts = " + str(shape(new_msmts)))
+        if len(msmts):
             (best_coeffs, best_accuracy) = ([], 0)
-            for j in range(0, 100):
+            for j in range(0, 10):
                 coeffs = predict_coeffs(model, msmts)
-                ekf = build_ekf(coeffs, history) 
+                logger.info("j =" + str(i) + ", coeffs = " + str(shape(coeffs)))
+                ekf = build_ekf(coeffs, [msmts]) #history) 
                 accuracy = ekf_accuracy(ekf, new_msmts)
-                if accuracy >= max(best_accuracy, ekf_baseline[i]):
+                if accuracy >= best_accuracy: # TODO max(best_accuracy, ekf_baseline[i]):
                     best_coeffs = coeffs
                 #if i % sample_size/10 == 0:
                   #  do_action(ekf, msmts)
@@ -136,11 +138,27 @@ def bootstrap_labels(model):
     return labels
 
 
+def get_accuracy(pair):
+    (n, d) = pair
+    if n==d:
+        return 1
+    elif abs(n-d)>d or d == 0:
+        return 0
+    return abs(n-d)/d
+
+
 def ekf_accuracy(ekf, msmts):
     ekf.predict()
     (state, n_state) = ([msmts[i] for i in state_ids], len(state_ids))
-    logger.info("x_prior = " + str(shape(ekf.x_prior)))
-    return 1-inner(ones(n_state), divide(subtract(ekf.x_prior, state), state))
+    state = array(state)
+    state.resize(n_state, 1)
+    logger.info("state = " + str(shape(state)) + ", n_state = " + str(n_state) + ", prior = " + str(shape(ekf.x_prior)))
+    #logger.info("subtract = " + str(shape(subtract(ekf.x_prior, state))) + ", ones = " + str(shape(ones((1, n_state)))))
+    #logger.info("divide = " + str(shape(divide(subtract(ekf.x_prior, state), state))) + ", ones = " + str(shape(ones((1, n_state)))))
+    #acc = lambda n,d: 1 if n==d else [0 if abs(n-d)>d or d==0 else abs(n-d)/d][0]
+    accuracy = sum(map(get_accuracy, zip(ekf.x_prior, state)))/n_state #divide(subtract(ekf.x_prior, state), state))[0][0]
+    logger.info("x_prior = " + str(shape(ekf.x_prior)) + ", accuracy = " + str(accuracy))
+    return accuracy
 
 
 def do_action(ekf, msmts):
@@ -234,11 +252,11 @@ def build_ekf(coeffs, z_data):
 def update(ekf, z_data):
     hjacobian = lambda x: identity(len(x))
     hx = lambda x: x
-    logging.info("ekf.x = " + str(ekf.x) + ", shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)))
+    logging.info("ekf.x = " + str(ekf.x) + ", shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)) + ", z_data = " + str(shape(z_data)))
     for z in z_data:
         z = array(z)
-        z.resize(n_msmt, n_msmt)
-        logging.info("build_ekf.update.z = " + str(shape(z)) + ", x_prior = " + str(shape(ekf.x_prior)) + ", hjacobian = " + str(hjacobian([1, 2])))
+        z.resize(n_msmt, 1)
+        logging.info("update.z = " + str(shape(z)) + ", x_prior = " + str(shape(ekf.x_prior)) + ", hjacobian = " + str(hjacobian([1, 2])))
         ekf.update(z, hjacobian, hx)
     return ekf
 
@@ -281,11 +299,20 @@ def save_state(runtime_state):
     return True
 
 
+def to_size(data):
+    input = array(data)
+    input.resize(n_entries, n_msmt)
+    return input
+
+
+
+init = tf.global_variables_initializer()
+
 #x = msmt_tensor()
 #logger.warning(x)
 
 # coefficients in noise and channel matrices, flattened out
-vocab_size = 3
+vocab_size = n_param
 
 # number of units in RNN cell
 n_hidden = 512
@@ -305,6 +332,7 @@ Y = tf.placeholder("float", [None, n_param])
 model = RNN(X, weights, biases)
 logger.debug("model = " + str(model))
 
+
 # TODO: implement EKF-based cost function
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model, labels=Y))
 
@@ -312,8 +340,6 @@ optimizer = tf.train.RMSPropOptimizer(learning_rate=learn_rate)
 train_op = optimizer.minimize(cost)
 
 #_, acc, loss, onehot_pred = tf.Session.run([optimizer, accuracy, cost, pred], feed_dict={x: x, y: y})
-
-init = tf.global_variables_initializer()
 
 with tf.Session() as sess:
     sess.run(init)
@@ -326,8 +352,8 @@ with tf.Session() as sess:
         test_data = test_data + batch_data[len(batch_data)*75:]
         for (batch_x, batch_y) in train_data:
             # Remember 'cost' contains the model
-            _, total_cost = session.run([train_op, cost], 
-                    feed_dict = {X: batch_x, Y: batch_y})
+            _, total_cost = sess.run([train_op, cost], 
+                    feed_dict = {X: to_size(batch_x), Y: to_size(batch_y)})
             initialized = True
             mean_cost = total_cost / len(train_data)
             logger.debug("Epoch = " + str(epoch) + ", cost = " + str(cost))
