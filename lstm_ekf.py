@@ -2,7 +2,8 @@ import tensorflow as tf
 import os, re
 import yaml, logging, logging.handlers
 from filterpy.kalman import ExtendedKalmanFilter
-from numpy import array, resize, zeros, float32, matmul, identity
+from numpy import array, resize, zeros, float32, matmul, identity, shape
+from numpy import ones, inner, divide, subtract
 from numpy.linalg import inv
 from functools import reduce
 from random import random
@@ -10,10 +11,10 @@ from random import random
 logger = logging.getLogger("LstmKalmanTuner")
 logger.setLevel(logging.DEBUG)
 
-logging.basicConfig(filename='lstm_ekf.log', format='%(levelname)s %(asctime)s in %(funcName)s() %(filename)s-%(lineno)s: %(message)s', level=logging.INFO)
+logging.basicConfig(filename='lstm_ekf.log', format='%(levelname)s %(asctime)s in %(funcName)s() %(filename)s-%(lineno)s: %(message)s \n', level=logging.INFO)
 
 n_msmt = 8 # Kalman z
-n_param = 3 # Kalman x
+n_param = 8 # Kalman x
 n_entries = 250
 learn_rate = 0.00001
 n_epochs = 15
@@ -27,10 +28,10 @@ def measurements():
         "grep -v KiB | grep -v PID | grep [0-9] | " + \
         "awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'"
     pstats = do(cmd)
-    logger.warning(pstats)
-    logger.warning(len(pstats.split()))
+    logger.info(pstats)
+    logger.info(len(pstats.split()))
     pstatsf = list(map(lambda i: float32(i) if i!="rt" else 0, pstats.split()))
-    logger.warning("type = " + str(type(pstatsf[0])))
+    logger.info("type = " + str(type(pstatsf[0])))
     return pstatsf
 
 
@@ -44,21 +45,21 @@ def RNN(x, weights, biases):
 
     # reshape to [1, n_msmt]
     x = tf.reshape(x, [-1, n_msmt])
-    logger.warning("RNN.x = " + str(x))
+    logger.info("RNN.x = " + str(x))
 
     # Generate a n_msmt-element sequence of inputs
     # (eg. [had] [a] [general] -> [20] [6] [33])
     x = tf.split(x,n_msmt,1)
-    logger.warning("RNN.x1 = " + str(x))
+    logger.info("RNN.x1 = " + str(x))
 
     # 1-layer LSTM with n_hidden units.
     rnn_cell = tf.contrib.rnn.BasicLSTMCell(n_hidden)
     rnn_cell.zero_state(1, dtype=tf.float32)
-    logger.warning("RNN.rnn_cell = " + str(rnn_cell))
+    logger.info("RNN.rnn_cell = " + str(rnn_cell))
 
     # generate prediction
     outputs, states = tf.contrib.rnn.static_rnn(rnn_cell, x, dtype=tf.float32)
-    logger.warning("RNN.x3 = " + str(x))
+    logger.info("RNN.x3 = " + str(x))
 
     # there are n_msmt outputs but
     # we only want the last output
@@ -67,8 +68,9 @@ def RNN(x, weights, biases):
 
 def predict_coeffs(model, newdata):
     global initialized
+    logger.info("initialized = " + str(initialized))
     if not initialized:
-        return map(lambda n: random(), range(0,2300))
+        return list(map(lambda n: random(), range(0,2300)))
     checkpoint_dir = "checkpoint/"
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -88,7 +90,7 @@ def predict_coeffs(model, newdata):
         input = array(newdata)
         input.resize(n_entries, n_msmt)
         output = model.eval({X: input})
-    logger.warning("Coeff predict = " + str(output) + ", input = " + str(newdata))
+    logger.debug("Coeff predict = " + str(output) + ", input = " + str(newdata))
     return output
 
 
@@ -102,11 +104,11 @@ def get_baseline(model, sample_size):
                 coeffs = predict_coeffs(model, msmts)
                 ekf = build_ekf(coeffs, history)
             elif len(history):
-                logger.warning("get_baseline.history = " + str(history))
-                ekf.update(history)
+                logger.info("get_baseline.history = " + str(history))
+                update(ekf, history)
             baseline.append(ekf_accuracy(ekf, new_msmts))
         msmts = new_msmts
-        history.append(msmts)
+        history.append([msmts])
     return baseline
 
 
@@ -124,10 +126,11 @@ def bootstrap_labels(model):
                 accuracy = ekf_accuracy(ekf, new_msmts)
                 if accuracy >= max(best_accuracy, ekf_baseline[i]):
                     best_coeffs = coeffs
-                if i % sample_size/10 == 0:
-                    do_action(ekf, msmts)
+                #if i % sample_size/10 == 0:
+                  #  do_action(ekf, msmts)
             if len(best_coeffs): # Only add labels if accuracy > ekf_baseline
                 labels.append([msmts, best_coeffs])
+        logger.info("i = " + str(i) + ", labels = " + str(shape(labels)))
         msmts = new_msmts
         history.append(msmts)
     return labels
@@ -135,14 +138,15 @@ def bootstrap_labels(model):
 
 def ekf_accuracy(ekf, msmts):
     ekf.predict()
-    (state, n_state) = (msmts[state_ids], len(state_ids))
-    return 1-inner(ones(n_state), divide(substract(ekf.x_priori, state), state))
+    (state, n_state) = ([msmts[i] for i in state_ids], len(state_ids))
+    logger.info("x_prior = " + str(shape(ekf.x_prior)))
+    return 1-inner(ones(n_state), divide(subtract(ekf.x_prior, state), state))
 
 
 def do_action(ekf, msmts):
     stateinfo = {"1": "nWebServers", "2": "nDb", "3": "nSearch"} # TODO fix keys
     window_size = 2 # TODO: should be based on variance of a state variable
-    state = ekf.x_priory  # state prediction
+    state = ekf.x_prior  # state prediction
     to_lqn = lambda lst: reduce(lambda a,b: str(a)+","+str(b), lst)
 
     for k,v in variables.items():
@@ -152,9 +156,9 @@ def do_action(ekf, msmts):
         do(get_config(['model-update-cmd'], [v, to_lqn(window)]))
 
     out = do(get_config('model-solve-cmd'))
-    util = lambda row: reduce(lambda a,b: a+b, map(float, row[3:]))
-    min_util = lambda a,b: a if util(a) < util(b) else b
-    best = reduce(min_util, map(lambda l: l.split(", "), out.split("\n")[1:]))
+    util = lambda row: reduce(lambda a,b: a+b, list(map(float, row[3:])))
+    low = lambda a,b: a if util(a) < util(b) else b
+    best = reduce(low, list(map(lambda l: l.split(", "), out.split("\n")[1:])))
     return run_action(best)
 
 
@@ -192,7 +196,7 @@ def get_steps(*cmd_path):
 def do(cmd):
     try:
         return os.popen(cmd).read()
-    except e:
+    except Error as e:
         logger.debug("Error running command " + str(cmd), e)
     return None
 
@@ -219,15 +223,22 @@ def get(o, *keys):
 def build_ekf(coeffs, z_data): 
     ekf = ExtendedKalmanFilter(dim_x=n_param, dim_z= n_msmt)
     q = array(coeffs)
-    q.resize(n_param, n_msmt) # TODO need to determine size
+    q.resize(n_param, n_param) # TODO need to determine size
     ekf.Q = q
     r = array(coeffs)
-    r = r.resize(n_msmt, n_entries) # TODO need to determine size
-    ekf.R = r
+    r = r.resize(n_msmt, n_msmt) # TODO need to determine size
+    #ekf.R = r
+    return update(ekf, z_data)
+
+
+def update(ekf, z_data):
     hjacobian = lambda x: identity(len(x))
     hx = lambda x: x
+    logging.info("ekf.x = " + str(ekf.x) + ", shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)))
     for z in z_data:
-        logging.info("build_ekf.update.z = " + str(z) + ", hjacobian = " + str(hjacobian([1, 2])))
+        z = array(z)
+        z.resize(n_msmt, n_msmt)
+        logging.info("build_ekf.update.z = " + str(shape(z)) + ", x_prior = " + str(shape(ekf.x_prior)) + ", hjacobian = " + str(hjacobian([1, 2])))
         ekf.update(z, hjacobian, hx)
     return ekf
 
@@ -265,7 +276,7 @@ def save_state(runtime_state):
         try:
             out.write(yaml.dump(runtime_state))
         except yaml.YAMLError as ex:
-            logger.warning("Unable to save state", ex)
+            logger.error("Unable to save state", ex)
             return False
     return True
 
@@ -292,7 +303,7 @@ X = tf.placeholder("float", [n_entries, n_msmt])
 Y = tf.placeholder("float", [None, n_param])
 
 model = RNN(X, weights, biases)
-logger.warning("model = " + str(model))
+logger.debug("model = " + str(model))
 
 # TODO: implement EKF-based cost function
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model, labels=Y))
@@ -319,14 +330,14 @@ with tf.Session() as sess:
                     feed_dict = {X: batch_x, Y: batch_y})
             initialized = True
             mean_cost = total_cost / len(train_data)
-            logger.warning("Epoch = " + str(epoch) + ", cost = " + str(cost))
-    logger.warning("LSTM Training finished")
+            logger.debug("Epoch = " + str(epoch) + ", cost = " + str(cost))
+    logger.debug("LSTM Training finished")
 
     # Testing
     pred = tf.nn.softmax(model)
     correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-    test_x = map(lambda t: t[0], test_data)
-    test_y = map(lambda t: t[1], test_data)
-    logger.warning("LSTM Accuracy = " + str(accuracy.eval({X:test_x, Y:test_y})))
+    test_x = list(map(lambda t: t[0], test_data))
+    test_y = list(map(lambda t: t[1], test_data))
+    logger.debug("LSTM Accuracy = " + str(accuracy.eval({X:test_x, Y:test_y})))
 
