@@ -1,5 +1,5 @@
 import tensorflow as tf
-import os, re
+import os, re, sys, traceback
 import yaml, logging, logging.handlers
 from filterpy.kalman import ExtendedKalmanFilter
 from numpy import array, resize, zeros, float32, matmul, identity, shape
@@ -16,12 +16,15 @@ logging.basicConfig(filename='lstm_ekf.log', format='%(levelname)s %(asctime)s i
 n_msmt = 8 # Kalman z
 n_param = 8 # Kalman x
 n_entries = 250
+# number of units in RNN cell
+n_hidden = 1 #512
 learn_rate = 0.00001
 n_epochs = 15
 state_ids = range(0, n_msmt)
 config = None
 state_file = "lstm_ekf.state"
 initialized = False
+
 
 def measurements():
     cmd = "top -b -n 2 | grep -v Tasks | grep -v top | grep -v %Cpu | " + \
@@ -43,26 +46,26 @@ def msmt_tensor():
 def RNN(x, weights, biases):
 
     # reshape to [1, n_msmt]
-    x = tf.reshape(x, [-1, n_msmt])
-    logger.info("RNN.x = " + str(x))
+    #x = tf.reshape(x, [-1, n_msmt])
+    #logger.info("RNN.x = " + str(x))
 
     # Generate a n_msmt-element sequence of inputs
     # (eg. [had] [a] [general] -> [20] [6] [33])
-    x = tf.split(x,n_msmt,1)
-    logger.info("RNN.x1 = " + str(x))
+    #tf.split(x, n_msmt, 1)
+    logger.info("RNN.x1 = " + str(x) + ", n_hidden = " + str(n_hidden))
 
     # 1-layer LSTM with n_hidden units.
-    rnn_cell = tf.contrib.rnn.BasicLSTMCell(n_hidden)
-    rnn_cell.zero_state(1, dtype=tf.float32)
+    rnn_cell = tf.nn.rnn_cell.LSTMCell(1) #n_hidden)
+    #rnn_cell.zero_state(1, dtype=tf.float32)
     logger.info("RNN.rnn_cell = " + str(rnn_cell))
 
     # generate prediction
-    outputs, states = tf.contrib.rnn.static_rnn(rnn_cell, x, dtype=tf.float32)
-    logger.info("RNN.x3 = " + str(x))
+    outputs, states = tf.contrib.rnn.static_rnn(rnn_cell, inputs=[x], dtype=tf.float32)
+    logger.info("outputs = " + str(outputs) + ", states = " + str(states))
 
-    # there are n_msmt outputs but
+    # there are n_entries outputs but
     # we only want the last output
-    return tf.matmul(outputs[-1], weights['out']) + biases['out']
+    return outputs #tf.matmul(outputs[-1], weights['out']) + biases['out']
 
 
 def predict_coeffs(model, newdata):
@@ -70,27 +73,11 @@ def predict_coeffs(model, newdata):
     logger.info("initialized = " + str(initialized))
     if not initialized:
         return list(map(lambda n: random(), range(0,2300)))
-    checkpoint_dir = "checkpoint/"
-    if not os.path.exists(checkpoint_dir):
-        os.makedirs(checkpoint_dir)
-    check_file = tf.train.latest_checkpoint(checkpoint_dir)
-    graph = tf.Graph()
-    conf = tf.ConfigProto(log_device_placement=False)
-    sess = tf.Session(config = conf)
-    output = []
-    with sess.as_default():
-        if check_file:
-            saver = tf.train.import_meta_graph("{}.meta".format(check_file))
-            saver.restore(sess, check_file)
-        #input = graph.get_operation_by_name("input").outputs[0]
-        #prediction = graph.get_operation_by_name("prediction").outputs[0]
-        #newdata = msmt_tensor()
-        #output = sess.run(model, feed_dict={x: newdata})
-        input = array(newdata)
-        input.resize(n_entries, n_msmt)
-        output = model.eval({X: input})
-    logger.debug("Coeff predict = " + str(output) + ", input = " + str(newdata))
-    return output
+    input = array(newdata)
+    input.resize(n_entries, n_msmt)
+    output = tf_run(model, feed_dict={X:input})
+    logger.debug("Coeff predict = " + str(output[-1]) + ", input = " + str(shape(newdata)))
+    return output[-1]
 
 
 def get_baseline(model, sample_size):
@@ -140,11 +127,11 @@ def bootstrap_labels(model):
 
 def get_accuracy(pair):
     (n, d) = pair
-    if n==d:
-        return 1
-    elif abs(n-d)>d or d == 0:
-        return 0
-    return abs(n-d)/d
+    if d==0:
+        return 1 if n==0 else 0
+    elif n>d:
+        return d/n
+    return n/d
 
 
 def ekf_accuracy(ekf, msmts):
@@ -299,52 +286,57 @@ def save_state(runtime_state):
     return True
 
 
-def to_size(data):
+def to_size(data, width):
     input = array(data)
-    input.resize(n_entries, n_msmt)
+    input.resize(n_entries, width)
+    logger.debug("data = " + str(len(data)) + ", input = " + str(shape(input)))
     return input
 
+def repeat(v, n = n_msmt):
+    if isinstance(v, type(lambda i:i)):
+        return map(v, range(0,n))
+    else:
+        return map(lambda i: v, range(0,n))
 
 
-init = tf.global_variables_initializer()
+def tf_run(*args, **kwargs):
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        return sess.run(*args, **kwargs)
 
-#x = msmt_tensor()
-#logger.warning(x)
-
-# coefficients in noise and channel matrices, flattened out
-vocab_size = n_param
-
-# number of units in RNN cell
-n_hidden = 512
-
-# RNN output node weights and biases
-weights = {
-    'out': tf.Variable(tf.random_normal([n_hidden, vocab_size]))
-}
-biases = {
-    'out': tf.Variable(tf.random_normal([vocab_size]))
-}
-
-
-X = tf.placeholder("float", [n_entries, n_msmt])
-Y = tf.placeholder("float", [None, n_param])
-
-model = RNN(X, weights, biases)
-logger.debug("model = " + str(model))
-
-
-# TODO: implement EKF-based cost function
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model, labels=Y))
-
-optimizer = tf.train.RMSPropOptimizer(learning_rate=learn_rate)
-train_op = optimizer.minimize(cost)
-
-#_, acc, loss, onehot_pred = tf.Session.run([optimizer, accuracy, cost, pred], feed_dict={x: x, y: y})
 
 with tf.Session() as sess:
-    sess.run(init)
+
+    X = tf.placeholder("float", [n_entries, n_msmt])
+    Y = tf.placeholder("float", [n_entries, 1])
+
+    #x = msmt_tensor()
+    #logger.warning(x)
+
+    # coefficients in noise and channel matrices, flattened out
+    vocab_size = n_param
+
+    # RNN output node weights and biases
+    weights = {
+        'out': tf.Variable(tf.random_normal([n_hidden, vocab_size]), name='w')
+    }
+    biases = {
+        'out': tf.Variable(tf.random_normal([vocab_size]), name='b')
+    }
+
+    model = RNN(X, weights, biases)
+    logger.debug("model = " + str(model))
+
+    # TODO: implement EKF-based cost function
+    #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model, labels=Y))
+    cost = tf.reduce_mean(tf.square(model - Y))
+
+    optimizer = tf.train.RMSPropOptimizer(learning_rate=learn_rate)
+    train_op = optimizer.minimize(cost)
 
     test_data = []
+
     # Training
     for epoch in range(0, n_epochs):
         batch_data = bootstrap_labels(model)
@@ -352,10 +344,18 @@ with tf.Session() as sess:
         test_data = test_data + batch_data[len(batch_data)*75:]
         for (batch_x, batch_y) in train_data:
             # Remember 'cost' contains the model
+            #try:
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.local_variables_initializer())
             _, total_cost = sess.run([train_op, cost], 
-                    feed_dict = {X: to_size(batch_x), Y: to_size(batch_y)})
+                feed_dict = {X: to_size(batch_x,n_msmt), Y: to_size(batch_y,1)})
+            logger.debug("batchx = " + str(shape(batch_x)) + ", batchy = " + str(shape(batch_y)) + ", cost = " + str(total_cost))
+            #exit()
             initialized = True
             mean_cost = total_cost / len(train_data)
+            #except:
+             #   logger.error("Error training model: " + str(sys.exc_info()))
+              #  exit()
             logger.debug("Epoch = " + str(epoch) + ", cost = " + str(cost))
     logger.debug("LSTM Training finished")
 
