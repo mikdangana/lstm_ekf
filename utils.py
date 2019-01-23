@@ -68,7 +68,7 @@ def save_state(runtime_state):
 def to_size(data, width, n_entries = 250):
     sized = array(data)
     sized.resize(n_entries, width)
-    logger.debug("data = " + str(len(data)) + ", sized = " + str(shape(sized)))
+    #logger.debug("data = " + str(len(data)) + ", sized = " + str(shape(sized)))
     return sized 
 
 

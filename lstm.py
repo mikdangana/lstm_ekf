@@ -10,6 +10,7 @@ from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
 from functools import reduce
 from random import random, uniform
+from scipy.misc import derivative
 
 logger = logging.getLogger("Lstm_Kalman_Tuner")
 logger.setLevel(logging.DEBUG)
@@ -20,7 +21,7 @@ logging.basicConfig(filename='lstm_ekf.log',
 
 n_msmt = 8 # Kalman z
 n_param = 8 # Kalman x
-n_entries = 250
+n_entries = 10
 # number of units in RNN cell
 n_hidden = 1
 learn_rate = 0.00001
@@ -51,7 +52,7 @@ def RNN(x, weights, biases):
 
     # generate prediction
     outputs,states = tf.contrib.rnn.static_rnn(cell,inputs=[x],dtype=tf.float32)
-    logger.info("outputs = " + str(outputs) + ", states = " + str(states))
+    logger.info("inputs = " + str(x) + "outputs = " + str(outputs) + ", outputs.trunced = " + str(outputs[-1]) + ", states = " + str(states) + ", weights = " + str(weights['out']) + ", biases = " + str(biases['out']))
 
     # there are n_entries outputs but
     # we only want the last output
@@ -75,15 +76,17 @@ def repeat(x, n):
 
 
 # Generates test training labels
-def test_labels(model, sample_size = 2):
+def test_labels(model, sample_size = 5):
     (labels, noise) = ([], 1.0) 
-    symbols = [lambda x: 0 if x<50 else 1, lambda x: 1 if x<50 else 1] #math.factorial, math.exp, math.log, math.sqrt, math.cos, math.sin, math.tan, math.erf]
+    symbols = [lambda x: 0 if x<50 else 1, math.factorial, math.exp, math.log, math.sqrt, math.cos, math.sin, math.tan, math.erf]
     for i in range(sample_size):
         for s in range(len(symbols)):
             for k in range(100):
                 def measure(msmt):
-                    return (1 - uniform(0.0, noise)) * symbols[s](k+1)
-                labels.append([list(map(measure, range(n_msmt))), repeat(s,n_param)])
+                    #res = (1 - uniform(0.0, noise)) * symbols[s](k+1)
+                    val = symbols[s](k+1) #if msmt==0 else derivative(symbols[s], k+1, msmt)
+                    return (1 - uniform(0.0, noise)) * val
+                labels.append([repeat(list(map(measure, range(n_msmt))), n_entries), repeat(s, n_entries)])
             logger.debug("test_labels.s = " + str(s))
     logger.debug("test_labels.labels = " + str(labels))
     return labels
@@ -100,11 +103,11 @@ def tf_run(*args, **kwargs):
 def tune_model(n_epochs = default_n_epochs):
 
     X = tf.placeholder("float", [n_entries, n_msmt])
-    Y = tf.placeholder("float", [n_entries, n_param])
+    Y = tf.placeholder("float", [n_entries, 1])
 
     # RNN output node weights and biases
-    weights = {'out':tf.Variable(tf.random_normal([n_hidden,n_param]),name='w')}
-    biases = {'out': tf.Variable(tf.random_normal([n_param]), name='b')}
+    weights = {'out':tf.Variable(tf.ones([1,n_entries]),name='w')}
+    biases = {'out': tf.Variable(tf.zeros([1,n_entries]), name='b')}
 
     model = RNN(X, weights, biases)
     logger.debug("model = " + str(model))
@@ -124,12 +127,14 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs):
         batch_data = test_labels(model)
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
-        for (batch_x, batch_y) in train_data:
+        for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
             # Remember 'cost' contains the model
             _, total_cost = tf_run([train_op, cost], feed_dict =
-                {X: to_size(batch_x,n_msmt), Y: to_size(batch_y,n_param)})
+                {X: to_size(batch_x,n_msmt,n_entries), 
+                 Y: to_size(batch_y,1, n_entries)})
             logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
-               str(shape(batch_y)) + ", cost = " + str(total_cost))
+               str(shape(batch_y)) + ", cost = " + str(total_cost)) + 
+               ", batch " + str(i) + " of " + str(len(train_data))
             initialized = True
             mean_cost = total_cost / len(train_data)
             logger.debug("Mean_cost = " +str(mean_cost))
@@ -143,8 +148,8 @@ def test(model, X, Y, test_data):
     pred = tf.nn.softmax(model)
     correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
     tf_accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-    test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt)
-    test_y = to_size(list(map(lambda t: t[1], test_data)), n_param)
+    test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt, n_entries)
+    test_y = to_size(list(map(lambda t: t[1], test_data)), 1, n_entries)
     accuracy = tf_run(tf_accuracy, feed_dict={X:test_x, Y:test_y})
     logger.debug("LSTM Accuracy = " + str(accuracy))
 
