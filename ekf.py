@@ -1,4 +1,5 @@
 from config import *
+from plot import *
 import math
 import yaml, logging, logging.handlers
 import matplotlib.pyplot as plt
@@ -9,6 +10,7 @@ from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
 from functools import reduce
 from random import random
+
 
 logger = logging.getLogger("Kalman_Filter")
 
@@ -21,9 +23,9 @@ def ekf_accuracy(ekf, msmt):
     state.resize(n_state, 1)
     logger.info("state = " + str(state) + ", n_state = " + str(n_state) + ", prior = " + str(ekf.x_prior))
     # accuracy is average of 1 - 'point-wise scaled delta'
-    accuracy = lambda p: max(1 - pow(pow(p[0]-p[1], 2), 0.5)/max(p[1], 1e-9), 0)
+    acc = lambda p: max(1 - pow(pow(p[0]-p[1], 2), 0.5)/max(p[1], 1e-9), 0)
     nums = lambda ns : map(lambda n: n[0], ns)
-    mean = sum(map(accuracy, zip(nums(ekf.x_prior), nums(state))))/len(state)
+    mean = sum(list(map(acc, zip(nums(ekf.x_prior), nums(state)))))/len(state)
     logger.info("x_prior = " + str(shape(ekf.x_prior)) + ", accuracy = " + str(mean))
     return mean
 
@@ -44,7 +46,7 @@ def build_ekf(coeffs, z_data):
 def update_ekf(ekf, z_data):
     hjacobian = lambda x: identity(len(x))
     hx = lambda x: x
-    logging.info("EKF = " + str(ekf) + "ekf.x = " + str(ekf.x) + ", shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)) + ", z_data = " + str(shape(z_data)))
+    logging.info("EKF.x = " + str(ekf.x) + ", shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)) + ", z_data = " + str(shape(z_data)))
     for z in z_data:
         z = array(z)
         z.resize(n_msmt, 1)
@@ -91,6 +93,7 @@ def test_ekf():
         predictions = ekf_track(coeffs, z_data)
         with open("predictions" + str(n) + ".pickle", 'wb') as f:
             pickle.dump(predictions, f)
+        # plotmetric(predictions, n)
     logger.info("accuracies = " + str(accuracies))
     return
 

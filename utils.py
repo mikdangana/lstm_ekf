@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 
 logging.basicConfig(filename='lstm_ekf.log', 
     format='%(levelname)s %(asctime)s in %(funcName)s() ' +
-        '%(filename)s-%(lineno)s: %(message)s \n', level=logging.INFO)
+        '%(filename)s-%(lineno)s: %(message)s \n', level=logging.DEBUG)
 
 state_file = "lstm_ekf.state"
 
@@ -20,7 +20,7 @@ def os_run(cmd):
     res = None
     try:
         res = os.popen(cmd).read()
-        logger.debug("Ran cmd = " + cmd + ", output = " + str(res))
+        logger.debug("Ran cmd = " + cmd + ", output = " + str(len(res)))
     except:
         ex = traceback.format_exc()
         logger.error("Error running '"+ str(cmd) +"': " + str(ex))

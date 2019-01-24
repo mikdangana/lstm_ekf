@@ -15,15 +15,7 @@ from scipy.misc import derivative
 logger = logging.getLogger("Lstm")
 
 
-def measurements():
-    cmd = "top -b -n 2 | grep -v Tasks | grep -v top | grep -v %Cpu | " + \
-        "grep -v KiB | grep -v PID | grep [0-9] | " + \
-        "awk '{print $1/100000,$3/140,$4/20,$5/1000000,$6/1000000,$7/1000000,$9,$10}'"
-    pstats = os_run(cmd)
-    logger.info(len(pstats.split()))
-    pstatsf = list(map(lambda i: float32(i) if i!="rt" else 0, pstats.split()))
-    logger.info("type = " + str(type(pstatsf[0])))
-    return pstatsf
+initialized = False
 
 
 def RNN(x, weights, biases):
@@ -35,42 +27,36 @@ def RNN(x, weights, biases):
 
     # generate prediction
     outputs,states = tf.contrib.rnn.static_rnn(cell,inputs=[x],dtype=tf.float32)
-    logger.info("inputs = " + str(x) + "outputs = " + str(outputs) + ", outputs.trunced = " + str(outputs[-1]) + ", states = " + str(states) + ", weights = " + str(weights['out']) + ", biases = " + str(biases['out']))
+    logger.info("inputs = " + str(x) + ", outputs = " + str(outputs) + ", outputs.trunced = " + str(outputs[-1]) + ", states = " + str(states) + ", weights = " + str(weights['out']) + ", biases = " + str(biases['out']))
 
     # there are n_entries outputs but
     # we only want the last output
     return tf.matmul(outputs[-1], weights['out']) + biases['out']
 
 
-def predict_coeffs(model, newdata):
-    global initialized
-    logger.info("initialized = " + str(initialized))
-    if not initialized:
-        return list(map(lambda n: random(), range(0,2300)))
-    input = array(newdata)
-    input.resize(n_entries, n_msmt)
-    output = tf_run(model, feed_dict={X:input})
-    logger.debug("Coeff predict = " + str(output[-1]) + ", input = " + str(shape(newdata)))
-    return output[-1]
-
+def to_size(data, width, entries = n_entries):
+    input = array(data)
+    input.resize(entries, width)
+    logger.debug("data = " + str(len(data)) + ", input = " + str(shape(input)))
+    return input
 
 def repeat(x, n):
     return list(map(lambda i: x, range(n)))
 
 
 # Generates test training labels
-def test_labels(model, sample_size = 5):
+def test_labels(model, X = None, sample_size = 5):
     (labels, noise) = ([], 1.0) 
     symbols = [lambda x: 0 if x<50 else 1, math.factorial, math.exp, math.log, math.sqrt, math.cos, math.sin, math.tan, math.erf]
     for i in range(sample_size):
         for s in range(len(symbols)):
-            for k in range(100):
+            for k in range(10):
                 def measure(msmt):
                     #res = (1 - uniform(0.0, noise)) * symbols[s](k+1)
                     val = symbols[s](k+1) #if msmt==0 else derivative(symbols[s], k+1, msmt)
                     return (1 - uniform(0.0, noise)) * val
                 labels.append([repeat(list(map(measure, range(n_msmt))), n_entries), repeat(s, n_entries)])
-            logger.debug("test_labels.s = " + str(s))
+            logger.debug("test_labels done with symbol " + str(symbols[s]))
     logger.debug("test_labels.labels = " + str(labels))
     return labels
 
@@ -83,7 +69,7 @@ def tf_run(*args, **kwargs):
 
 
 # Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
-def tune_model(n_epochs = default_n_epochs):
+def tune_model(n_epochs = default_n_epochs, labelfn = test_labels):
 
     X = tf.placeholder("float", [n_entries, n_msmt])
     Y = tf.placeholder("float", [n_entries, 1])
@@ -99,15 +85,25 @@ def tune_model(n_epochs = default_n_epochs):
 
     optimizer = tf.train.RMSPropOptimizer(learning_rate=learn_rate)
     train_op = optimizer.minimize(cost)
-    return train_and_test(model, X, Y, train_op, cost, n_epochs)
+    return train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn)
 
 
-def train_and_test(model, X, Y, train_op, cost, n_epochs):
+def lstm_initialized():
+    global initialized
+    return initialized
+
+
+def set_lstm_initialized():
+    global initialized
+    initialized = True
+
+
+def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
     test_data = []
 
     # Training
     for epoch in range(0, n_epochs):
-        batch_data = test_labels(model)
+        batch_data = labelfn(model, X)
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
         for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
@@ -119,7 +115,7 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs):
                str(shape(batch_y)) + ", cost = " + str(total_cost) + 
                ", batch " + str(i+1) + " of " + str(len(train_data)) + 
                ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
-            initialized = True
+            set_lstm_initialized()
             mean_cost = total_cost / len(train_data)
             logger.debug("Mean_cost = " +str(mean_cost))
         logger.debug("Epoch = " + str(epoch) + ", train_data = " +str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
