@@ -19,7 +19,7 @@ def measurements():
 def predict_coeffs(model, newdata, X):
     logger.info("initialized = " + str(lstm_initialized()))
     if not lstm_initialized():
-        return list(map(lambda n: random(), range(0,2300)))
+        return list(map(lambda n: random(), range(0,n_entries)))
     input = array(newdata)
     input.resize(n_entries, n_msmt)
     output = tf_run(model, feed_dict={X:input})
@@ -59,13 +59,14 @@ def bootstrap_labels(model, X, sample_size = 10, action_interval = 15):
             (best_coeffs, best_accuracy) = ([], 0)
             for j in range(0, pred_per_sample):
                 coeffs = predict_coeffs(model, msmts, X)
+                logger.info("pre build_ekf.coeffs = " + str(coeffs))
                 ekf = build_ekf(coeffs, [msmts]) #history) 
                 accuracy = ekf_accuracy(ekf, new_msmts)
-                logger.info("j =" + str(i) + ", coeffs = " + str(shape(coeffs)) + ", accuracy = " + str(accuracy) + ", best_accuracy = " + str(best_accuracy))
+                logger.info("j = " + str(i) + ", coeffs = " + str(coeffs) + ", accuracy = " + str(accuracy) + ", best_accuracy = " + str(best_accuracy))
                 if accuracy >= best_accuracy: # TODO max(best_acc, ekf_base[i]):
                     best_coeffs = coeffs
             if len(best_coeffs): # Only add labels if accuracy > ekf_baseline
-                labels.append([msmts, best_coeffs])
+                labels.append([to_size(msmts, n_entries, n_msmt), best_coeffs])
             if i % action_interval == 0:
                 do_action(ekf, msmts)
         msmts = new_msmts

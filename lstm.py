@@ -130,6 +130,7 @@ def test(model, X, Y, test_data):
     tf_accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
     test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt, n_entries)
     test_y = to_size(list(map(lambda t: t[1], test_data)), 1, n_entries)
+    logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + ", X = " + str(X) + ", Y = " + str(Y))
     accuracy = tf_run(tf_accuracy, feed_dict={X:test_x, Y:test_y})
     logger.debug("LSTM Accuracy = " + str(accuracy))
 
