@@ -1,7 +1,4 @@
-import tensorflow as tf
-import os, re, sys, traceback
 import yaml, logging, logging.handlers
-from filterpy.kalman import ExtendedKalmanFilter
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
@@ -16,8 +13,19 @@ logging.basicConfig(filename='lstm_ekf.log',
     format='%(levelname)s %(asctime)s in %(funcName)s() ' +
         '%(filename)s-%(lineno)s: %(message)s \n', level=logging.INFO)
 
+
+n_msmt = 8 # Kalman z
+n_param = 8 # Kalman x
+n_entries = 10
+# number of units in RNN cell
+n_hidden = 1
+learn_rate = 0.00001
+default_n_epochs = 1000
+state_ids = range(0, n_msmt)
 config = None
+state_file = "lstm_ekf.state"
 initialized = False
+config = None
 
 
 def do_action(ekf, msmts):

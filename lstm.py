@@ -12,24 +12,7 @@ from functools import reduce
 from random import random, uniform
 from scipy.misc import derivative
 
-logger = logging.getLogger("Lstm_Kalman_Tuner")
-logger.setLevel(logging.DEBUG)
-
-logging.basicConfig(filename='lstm_ekf.log', 
-    format='%(levelname)s %(asctime)s in %(funcName)s() ' +
-        '%(filename)s-%(lineno)s: %(message)s \n', level=logging.INFO)
-
-n_msmt = 8 # Kalman z
-n_param = 8 # Kalman x
-n_entries = 10
-# number of units in RNN cell
-n_hidden = 1
-learn_rate = 0.00001
-default_n_epochs = 1000
-state_ids = range(0, n_msmt)
-config = None
-state_file = "lstm_ekf.state"
-initialized = False
+logger = logging.getLogger("Lstm")
 
 
 def measurements():
@@ -133,8 +116,9 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs):
                 {X: to_size(batch_x,n_msmt,n_entries), 
                  Y: to_size(batch_y,1, n_entries)})
             logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
-               str(shape(batch_y)) + ", cost = " + str(total_cost)) + 
-               ", batch " + str(i) + " of " + str(len(train_data))
+               str(shape(batch_y)) + ", cost = " + str(total_cost) + 
+               ", batch " + str(i+1) + " of " + str(len(train_data)) + 
+               ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
             initialized = True
             mean_cost = total_cost / len(train_data)
             logger.debug("Mean_cost = " +str(mean_cost))
@@ -156,5 +140,7 @@ def test(model, X, Y, test_data):
     return [model, accuracy]
 
 
-tune_model(2)
-logger.debug("done")
+
+if __name__ == "__main__":
+    tune_model(2)
+    logger.debug("done")

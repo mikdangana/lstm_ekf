@@ -1,7 +1,5 @@
-import tensorflow as tf
 import os, re, sys, traceback
 import yaml, logging, logging.handlers
-from filterpy.kalman import ExtendedKalmanFilter
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
@@ -64,12 +62,6 @@ def save_state(runtime_state):
             return False
     return True
 
-
-def to_size(data, width, n_entries = 250):
-    sized = array(data)
-    sized.resize(n_entries, width)
-    #logger.debug("data = " + str(len(data)) + ", sized = " + str(shape(sized)))
-    return sized 
 
 
 def repeat(v, n):
