@@ -72,11 +72,11 @@ def tf_run(*args, **kwargs):
 def tune_model(n_epochs = default_n_epochs, labelfn = test_labels):
 
     X = tf.placeholder("float", [n_entries, n_msmt])
-    Y = tf.placeholder("float", [n_entries, 1])
+    Y = tf.placeholder("float", [n_coeff, 1])
 
     # RNN output node weights and biases
-    weights = {'out':tf.Variable(tf.ones([1,n_entries]),name='w')}
-    biases = {'out': tf.Variable(tf.zeros([1,n_entries]), name='b')}
+    weights = {'out':tf.Variable(tf.ones([n_hidden,n_coeff]),name='w')}
+    biases = {'out': tf.Variable(tf.zeros([1, n_coeff]), name='b')}
 
     model = RNN(X, weights, biases)
     logger.debug("model = " + str(model))
@@ -109,8 +109,8 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
         for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
             # Remember 'cost' contains the model
             _, total_cost = tf_run([train_op, cost], feed_dict =
-                {X: to_size(batch_x,n_msmt,n_entries), 
-                 Y: to_size(batch_y,1, n_entries)})
+                {X: to_size(batch_x, n_msmt, n_entries), 
+                 Y: to_size(batch_y, 1, n_coeff)})
             logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
                str(shape(batch_y)) + ", cost = " + str(total_cost) + 
                ", batch " + str(i+1) + " of " + str(len(train_data)) + 
@@ -129,12 +129,12 @@ def test(model, X, Y, test_data):
     correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
     tf_accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
     test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt, n_entries)
-    test_y = to_size(list(map(lambda t: t[1], test_data)), 1, n_entries)
+    test_y = to_size(list(map(lambda t: t[1], test_data)), 1, n_coeff)
     logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + ", X = " + str(X) + ", Y = " + str(Y))
     accuracy = tf_run(tf_accuracy, feed_dict={X:test_x, Y:test_y})
     logger.debug("LSTM Accuracy = " + str(accuracy))
 
-    return [model, accuracy]
+    return [model, X, accuracy]
 
 
 

@@ -71,3 +71,6 @@ def repeat(v, n):
         return map(lambda i: v, range(0,n))
 
 
+def avg(seq):
+    size = len(list(seq))
+    return sum(seq) / (size if size else size+1)

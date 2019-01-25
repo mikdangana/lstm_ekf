@@ -14,14 +14,14 @@ logging.basicConfig(filename='lstm_ekf.log',
         '%(filename)s-%(lineno)s: %(message)s \n', level=logging.DEBUG)
 
 
-n_msmt = 8 # Kalman z
-n_param = 8 # Kalman x
-n_entries = 10
+n_msmt = 8 * 3 # Kalman z
+n_coeff = n_msmt * n_msmt # Kalman x
+n_entries = 1
 # number of units in RNN cell
-n_hidden = 1
+n_hidden = 2
 learn_rate = 0.00001
 default_n_epochs = 1000
-state_ids = range(0, n_msmt)
+state_ids = range(n_msmt)
 config = None
 state_file = "lstm_ekf.state"
 initialized = False
