@@ -15,7 +15,7 @@ logging.basicConfig(filename='lstm_ekf.log',
 
 
 n_msmt = 8 * 3 # Kalman z
-n_coeff = n_msmt * n_msmt # Kalman x
+n_coeff = n_msmt * n_msmt * 2 # Kalman x
 n_entries = 1
 # number of units in RNN cell
 n_hidden = 2

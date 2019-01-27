@@ -1,7 +1,7 @@
 import os, re, sys, traceback
 import yaml, logging, logging.handlers
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, dot, divide, subtract
+from numpy import ones, dot, divide, subtract, size
 from numpy.linalg import inv
 from functools import reduce
 from random import random
@@ -74,3 +74,9 @@ def repeat(v, n):
 def avg(seq):
     size = len(list(seq))
     return sum(seq) / (size if size else size+1)
+
+
+def flatlist(matrix):
+    v = array(matrix);
+    v.resize(size(matrix))
+    return list(v)

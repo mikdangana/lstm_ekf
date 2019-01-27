@@ -35,26 +35,27 @@ def ekf_accuracy(ekf, msmt):
 
 # Build and update an EKF using the provided measurement data
 def build_ekf(coeffs, z_data): 
-    dimx = int(math.sqrt(n_coeff))
+    dimx = int(math.sqrt(n_coeff - n_msmt*n_msmt))
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    q = array(coeffs)
+    q = array(coeffs[0:dimx*dimx])
     q.resize(dimx, dimx) # TODO need to determine size
     ekf.Q = q
-    r = array(coeffs)
+    r = array(coeffs[-n_msmt*n_msmt:])
     r = r.resize(n_msmt, n_msmt) # TODO need to determine size
-    #ekf.R = r
-    return update_ekf(ekf, z_data)
+    #ekf.R = r # R assignment done using ekf.update() below
+    #logger.debug("coeffs = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff) + ", ekf.Q = " + str(ekf.Q) + ", ekf.R = " + str(ekf.R) + ", r = " + str(r))
+    return update_ekf(ekf, z_data, r)
 
 
-def update_ekf(ekf, z_data):
+def update_ekf(ekf, z_data, R = None):
     hjacobian = lambda x: identity(len(x))
     hx = lambda x: x
     #logging.debug("EKF.x.shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)) + ", z_data = " + str(shape(z_data)))
     for z in z_data:
         z = array(z)
         z.resize(n_msmt, 1)
-        #logging.info("update.z = " + str(shape(z)) + ", x_prior = " + str(shape(ekf.x_prior)) + ", hjacobian = " + str(hjacobian([1, 2])))
-        ekf.update(z, hjacobian, hx)
+        #logger.info("update.z = " + str(shape(z)) + ", x_prior = " + str(shape(ekf.x_prior)) + ", hjacobian = " + str(hjacobian([1, 2])))
+        ekf.update(z, hjacobian, hx, R)
     return ekf
 
 
@@ -71,13 +72,14 @@ def plot_ekf():
     plt.plot([1, 2, 3, 4])
     plt.ylabel('some numbers')
     plt.show()
-    logging.info("plot_ekf() done")
+    logger.info("plot_ekf() done")
 
 
 # Testbed to unit test EKF using hand-crafted data
 def test_ekf():
     fns = [lambda x: 0 if x<50 else 1, math.exp, math.sin, math.erf]
-    coeffs = identity(n_coeff)
+    coeffs = flatlist(identity(int(sqrt(n_coeff-n_msmt*n_msmt)))) + flatlist(identity(n_msmt));
+    logger.info("coeffs = " + str(len(coeffs)) + ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
     accuracies = []
     for n in range(len(fns)):
         z_data = []
