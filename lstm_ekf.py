@@ -48,7 +48,7 @@ def baseline_accuracy(model, sample_size, X):
 
 
 # Generates training labels by a bootstrap active-learning approach 
-def bootstrap_labels(model, X, sample_size = 10, action_interval = 15):
+def bootstrap_labels(model, X, sample_size = 10, action_interval = 6):
     (labels, ekf, msmts, history, pred_per_sample) = ([], None, [], [], 10)
     ekf_baseline = baseline_accuracy(model, sample_size, X)
     for i in range(0, sample_size):

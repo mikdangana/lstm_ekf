@@ -19,6 +19,7 @@ def os_run(cmd):
 
     res = None
     try:
+        logger.debug("Running cmd " + cmd)
         res = os.popen(cmd).read()
         logger.debug("Ran cmd = " + cmd + ", output = " + str(len(res)))
     except:
@@ -45,11 +46,14 @@ def get(o, *keys):
 
 
 def load_state():
-    with open(state_file, 'r') as stream:
-        try:
-            return yaml.load(stream)
-        except yaml.YAMLError as ex:
-            logger.error("Unable to load state", ex)
+    try:
+        with open(state_file, 'r') as stream:
+            try:
+                return yaml.load(stream)
+            except yaml.YAMLError as ex:
+                logger.error("Unable to load state", ex)
+    except FileNotFoundError:
+        logger.error("State file not found.")
     return None
 
 

@@ -1,4 +1,5 @@
 import yaml, logging, logging.handlers
+import ast
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
@@ -46,37 +47,43 @@ def do_action(ekf, msmts):
     logger.debug("out = " + str(out) + ", rows = " + str(len(out.split("\n"))))
     util = lambda row: reduce(lambda a,b: a+b, list(map(float, row[3:])), 1)
     low = lambda a,b: a if util(a) < util(b) else b
-    best = reduce(low, list(map(lambda l: l.split(", "), out.split("\n")[1:])))
+    okrows = lambda rows: filter(lambda row: len(row) > 1, rows)
+    rows = list(map(lambda l: l.split(", "), okrows(out.split("\n")[1:])))
+    best = reduce(low, rows)
+    logger.debug("best = " + str(best) + ", rows = " + str(rows) + ", util = " + str(util(rows[0])) + ", low = " + str(low(rows[0], rows[1])))
     return run_action(best)
 
 
 def run_action(action):
     run_state = load_state()
     run_state = {"app": 1, "db": 1, "solr": 1} if not run_state else run_state
+    logger.debug("action = " + str(action))
     action = {k:v for k,v in zip(run_state.keys(), action[0:3])}
 
-    for res,count in action:
-        if count > run_state[res]:
+    for res,count in action.items():
+        logger.debug("res = " + str(res) + ", count = " + str(count) + ", run_state = " + str(run_state) + ", action = " + str(action))
+        if int(count) > int(run_state[res]):
             for step in get_steps("provision-cmds", res):
                 os_run(step)
-            run_state[res] = run_state[res] + 1
-        elif count < run_state[res]:
+            run_state[res] = int(run_state[res]) + 1
+        elif int(count) < int(run_state[res]):
             for step in get_steps("deprovision-cmds", res):
                 os_run(step)
-            run_state[res] = run_state[res] - 1
+            run_state[res] = int(run_state[res]) - 1
     save_state(run_state)
     return True
 
 
 def get_steps(*cmd_path):
     steps = []
-    variables = get_config("variables")
-    cfg = get_config(cmd_path)
+    variables = dict(ast.literal_eval(get_config("variables")))
+    cfg = ast.literal_eval(get_config(cmd_path))
 
-    for step in cfg if cfg else []:
+    logger.debug("variables = " + str(variables.items()) + ", cfg = " + str(cfg))
+    for step in (cfg if cfg else []):
         for cmd in step if isinstance(step, list) else [step]: 
             for k,v in variables.items():
-                cmd = re.sub(r'<' + k + '>', v, cmd)
+                cmd = re.sub(r'<' + str(k) + '>', v, cmd)
                 steps.append(cmd)
     return steps
 
@@ -101,10 +108,10 @@ def get_config(path, params = []):
     if 'variables' in config:
         for k, v in config['variables'].items():
             k = "<" + str(k) + ">"
-            logger.debug("k = " + str(k) + ", v = " + str(v))
+            logger.debug("k = " + str(k) + ", v = " + str(v) + ", val = " + str(val))
             if isinstance(v, type("")):
                 val = re.sub(r'' + k, v, str(val))
-            elif isinstance(v, list) and (k in val):
+            elif isinstance(v, list) and val and (k in val):
                 return [re.sub(r'' + k, vi, str(val)) for vi in v]
     return val
 
