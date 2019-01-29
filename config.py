@@ -57,7 +57,6 @@ def do_action(ekf, msmts):
 def run_action(action):
     run_state = load_state()
     run_state = {"app": 1, "db": 1, "solr": 1} if not run_state else run_state
-    logger.debug("action = " + str(action))
     action = {k:v for k,v in zip(run_state.keys(), action[0:3])}
 
     for res,count in action.items():

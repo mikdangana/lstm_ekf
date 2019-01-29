@@ -1,10 +1,12 @@
 import os, re, sys, traceback
 import yaml, logging, logging.handlers
+import pickle
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract, size
 from numpy.linalg import inv
 from functools import reduce
 from random import random
+from time import time
 
 logger = logging.getLogger("Kalman_Filter")
 logger.setLevel(logging.DEBUG)
@@ -84,3 +86,26 @@ def flatlist(matrix):
     v = array(matrix);
     v.resize(size(matrix))
     return list(v)
+
+
+def pickleadd(filename, value):
+    history = pickleload(filename) or []
+    pickledump(filename, history + [value])
+
+
+def pickledump(filename, value):
+    try:
+        with open(filename, 'wb') as f:
+            return pickle.dump(value, f)
+    except FileNotFoundError:
+        logger.error(str(filename) + " not found.")
+    return None
+
+
+def pickleload(filename):
+    try:
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        logger.error(str(filename) + " not found.")
+    return None

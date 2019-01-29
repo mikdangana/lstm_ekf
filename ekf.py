@@ -4,7 +4,6 @@ from plot import *
 import math
 import yaml, logging, logging.handlers
 import matplotlib.pyplot as plt
-import pickle
 from filterpy.kalman import ExtendedKalmanFilter
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract
@@ -95,8 +94,7 @@ def test_ekf():
         accuracies.append(avg(means)) 
         logger.info("accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) + " of " + str(len(fns)))
         predictions = ekf_track(coeffs, z_data)
-        with open("predictions" + str(n) + ".pickle", 'wb') as f:
-            pickle.dump(predictions, f)
+        pickledump("predictions" + str(n) + ".pickle", predictions)
         # plotmetric(predictions, n)
     logger.info("accuracies = " + str(accuracies))
     return
