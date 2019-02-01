@@ -17,6 +17,11 @@ logger = logging.getLogger("Kalman_Filter")
 
 # Test the accuracy of an EKF using the provide measurement data
 def ekf_accuracy(ekf, msmt):
+    return ekf_accuracies(ekf, msmt)[-1]
+
+
+# Test the accuracies of an EKF per measurement metric
+def ekf_accuracies(ekf, msmt):
     ekf.predict()
     logger.info("state_ids = " + str(state_ids) + ", msmt = " + str(len(msmt)))
     (state, n_state) = ([msmt[i] for i in state_ids], len(state_ids))
@@ -24,11 +29,12 @@ def ekf_accuracy(ekf, msmt):
     state.resize(n_state, 1)
     logger.info("state = " + str(state) + ", n_state = " + str(n_state) + ", prior = " + str(ekf.x_prior))
     # accuracy is average of 1 - 'point-wise scaled delta'
-    acc = lambda p: max(1 - abs(p[0]-p[1])/max(p[1], 1e-9), 0)
+    accuracy = lambda p: max(1 - abs(p[0]-p[1])/max(p[1], 1e-9), 0)
     nums = lambda ns : map(lambda n: n[0], ns)
-    mean = avg(list(map(acc, zip(nums(ekf.x_prior), nums(state)))))
+    accuracies = list(map(accuracy, zip(nums(ekf.x_prior), nums(state))))
+    mean = avg(accuracies)
     logger.info("x_prior = " + str(shape(ekf.x_prior)) + ", accuracy = " + str(mean))
-    return mean
+    return [[accuracies, list(nums(state))], mean]
 
 
 
@@ -41,8 +47,6 @@ def build_ekf(coeffs, z_data):
     ekf.Q = q
     r = array(coeffs[-n_msmt*n_msmt:])
     r = r.resize(n_msmt, n_msmt) # TODO need to determine size
-    #ekf.R = r # R assignment done using ekf.update() below
-    #logger.debug("coeffs = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff) + ", ekf.Q = " + str(ekf.Q) + ", ekf.R = " + str(ekf.R) + ", r = " + str(r))
     return update_ekf(ekf, z_data, r)
 
 

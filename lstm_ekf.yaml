@@ -24,7 +24,6 @@ deprovision-cmds:
         - "<cassandra-home>/bin/start"
         # Figure out how to use JMX rather than cassandra stop/start
 
-model-update-cmd: \
-    "sed -i 's/<param0>\s*=\s*\[?[0-9,]\]?*/<param0> = <param1>/' <lqn-model>"
+model-update-cmd: "sed -i 's/<param0>\\s*=\\s*\\[?[0-9,]\\]?*/<param0> = <param1>/' <lqn-model>"
 
 model-solve-cmd: "wine lqns <lqn-model>"

@@ -2,6 +2,7 @@ from config import *
 from utils import *
 from ekf import *
 from lstm import *
+from time import sleep
 
 
 def measurements():
@@ -49,9 +50,10 @@ def baseline_accuracy(model, sample_size, X):
 
 
 # Generates training labels by a bootstrap active-learning approach 
-def bootstrap_labels(model, X, sample_size = 10, action_interval = 6):
+def bootstrap_labels(model, X, sample_size = 10, action_interval = 40):
     (labels, ekf, msmts, history, pred_per_sample) = ([], None, [], [], 10)
     ekf_baseline = baseline_accuracy(model, sample_size, X)
+    accuracies = []
     for i in range(0, sample_size):
         new_msmts = measurements()
         logger.info("sample="+str(i) + ", new_msmts = " + str(shape(new_msmts)))
@@ -61,44 +63,54 @@ def bootstrap_labels(model, X, sample_size = 10, action_interval = 6):
                 coeffs = predict_coeffs(model, msmts, X)
                 logger.info("pre build_ekf.coeffs = " + str(coeffs))
                 ekf = build_ekf(coeffs, [msmts]) 
-                accuracy = ekf_accuracy(ekf, new_msmts)
+                accs, accuracy = ekf_accuracies(ekf, new_msmts)
                 logger.info("sample = " + str(i) + " of " + str(sample_size) + ", pred_per_sample = " + str(j) + " of " + str(pred_per_sample) + ", coeffs = " + str(coeffs) + ", accuracy = " + str(accuracy) + ", best_accuracy = " + str(best_accuracy))
-                if accuracy >= best_accuracy: # TODO max(best_acc, ekf_base[i]):
-                    best_coeffs = to_size(coeffs, 1, n_coeff)
-                    best_accuracy = accuracy
-                    pickleadd("boot_accuracies.pickle", [time(),best_accuracy])
-            if len(best_coeffs): # Only add labels if accuracy > ekf_baseline
-                labels.append([to_size(msmts, n_msmt, n_entries), best_coeffs])
+                #if accuracy >= best_accuracy: # TODO max(best_acc, ekf_base[i]):
+                 #   best_coeffs = to_size(coeffs, 1, n_coeff)
+                  #  best_accuracy = accuracy
+                accuracies.append([accs, best_accuracy])
+                labels.append([accuracy, to_size(msmts, n_msmt, n_entries), to_size(coeffs, 1, n_coeff)])
+            #if len(best_coeffs): # Only add labels if accuracy > ekf_baseline
+                #labels.append([to_size(msmts, n_msmt, n_entries), best_coeffs])
+            sleep(0.5)
             if i % action_interval == 0:
                 do_action(ekf, msmts)
         msmts = new_msmts
         history.append(msmts)
-    return labels
+    pickleconc("boot_accuracies.pickle", list(map(lambda a:a[-1], accuracies)))
+    pickleconc("boot_profiles.pickle", list(map(lambda a:a[0], accuracies)))
+    labels.sort(key = lambda v: v[0], reverse=True)
+    return list(map(lambda v: v[1:], labels[0:int(0.1 * len(labels))]))
 
 
 def track_accuracies(ekf, count, filename):
     accuracies = []
     for i in range(count):
-        accuracies.append(ekf_accuracy(ekf, measurements()))
+        msmts = measurements()
+        accuracies.append(ekf_accuracy(ekf, msmts))
+        update_ekf(ekf, [msmts])
+        sleep(1)
     pickledump(filename, accuracies)
     return accuracies
 
 
-def model_accuracy(model, input_tensor):
+def tuned_accuracy():
+    lstm_model, X, lstm_accuracy = tune_model(10, bootstrap_labels)
     history = list(map(lambda x : measurements(), range(10)))
-    coeffs = predict_coeffs(lstm_model, history[-1], input_tensor)
+    coeffs = predict_coeffs(lstm_model, history[-1], X)
     ekf = build_ekf(coeffs, history)
-    return track_accuracies(ekf, 10, "tuned_accuracies.pickle")
+    return track_accuracies(ekf, 20, "tuned_accuracies.pickle")
     
 
 def raw_accuracy():
     history = list(map(lambda x : measurements(), range(10)))
     ekf = build_ekf(identity(int(math.sqrt(n_coeff))), history)
-    return track_accuracies(ekf, 10, "raw_accuracies.pickle")
+    return track_accuracies(ekf, 20, "raw_accuracies.pickle")
     
 
 if __name__ == "__main__":
-    lstm_model, X, lstm_accuracy = tune_model(2, bootstrap_labels)
-    logger.info("Tuned model accuracy = " + str(model_accuracy(lstm_model, X)))
-    #logger.info("Raw EKF accuracy = " + str(raw_accuracy()))
-    logger.info("Output in lstm_ekf.log")
+    tuned = tuned_accuracy()
+    raw = raw_accuracy()
+    logger.info("Tuned EKF accuracy = " + str(tuned))
+    logger.info("Raw EKF accuracy = " + str(raw))
+    print("Output in lstm_ekf.log")

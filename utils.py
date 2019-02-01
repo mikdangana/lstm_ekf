@@ -2,7 +2,7 @@ import os, re, sys, traceback
 import yaml, logging, logging.handlers
 import pickle
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, dot, divide, subtract, size
+from numpy import ones, dot, divide, subtract, size, append
 from numpy.linalg import inv
 from functools import reduce
 from random import random
@@ -21,7 +21,7 @@ def os_run(cmd):
 
     res = None
     try:
-        logger.debug("Running cmd " + cmd)
+        logger.debug("Running cmd " + str(cmd))
         res = os.popen(cmd).read()
         logger.debug("Ran cmd = " + cmd + ", output = " + str(len(res)))
     except:
@@ -38,7 +38,7 @@ def utilization(key, states, stateinfo):
 def get(o, *keys):
     for k in keys:
         if isinstance(k, list):
-            o = get(o[k[0]], k[1:]) if len(k) else o
+            o = get(o[k[0]], k[1:]) if len(k) and o else o
         elif not k in o:
             return None
         else:
@@ -88,6 +88,11 @@ def flatlist(matrix):
     return list(v)
 
 
+def pickleconc(filename, value):
+    history = pickleload(filename) or []
+    pickledump(filename, history + value)
+
+
 def pickleadd(filename, value):
     history = pickleload(filename) or []
     pickledump(filename, history + [value])
@@ -109,3 +114,11 @@ def pickleload(filename):
     except FileNotFoundError:
         logger.error(str(filename) + " not found.")
     return None
+
+
+def twod(lst):
+    data = array([[]])
+    for row in lst:
+        data = append(data, row)
+    data.resize(len(lst), len(lst[0]))
+    return data

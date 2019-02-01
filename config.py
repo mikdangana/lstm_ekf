@@ -115,3 +115,8 @@ def get_config(path, params = []):
     return val
 
 
+
+if __name__ == "__main__":
+    load_config()
+    print("Loaded config = " + str(config))
+    print("model-update-cmd = " + str(get_config(['model-update-cmd']))) 

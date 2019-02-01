@@ -16,22 +16,39 @@ from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 import numpy as np
 from utils import *
+from wired3d import *
 
 
-def plotsurface():
+def sortPID(msmt):
+    ncol = 8
+    l = array(msmt)
+    l.resize(int(len(msmt)/ncol), ncol)
+    l = list(l)
+    l.sort(key = lambda r: r[0])
+    return array(l).flatten()
+
+
+def extend(lst, n):
+    return array(list(lst) + list(map(lambda i: 0, range(n))))
+
+
+def plotsurface(files = []):
+    print("plotsurface.files = " + str(files))
     fig = plt.figure()
     ax = fig.gca(projection='3d')
 
     # Make data.
 
-    msmts = pickleload("measurements.pickle")
+    msmts = pickleload(files[0] if len(files) else "measurements.pickle")
 
-    ymax = len(msmts[0])
+    ymax = max(list(map(lambda m: len(m), msmts)))
     xmax = len(msmts)
     xstep = 5
-    print("ymax = " + str(ymax) + ", xmax = " + str(xmax))
     X = np.arange(0, xmax, xstep)
-    Y = np.arange(0, ymax, ymax/(xmax/xstep)) 
+    Y = np.arange(0, ymax, int(ymax/(xmax/xstep)))[0:len(X)]
+    msmts = list(map(sortPID, msmts))
+    msmts = list(map(lambda m: extend(m, ymax), msmts))
+    print("ymax = " + str(ymax) + ", xmax = " + str(xmax) + ", msmts.len = " + str(len(msmts)) + ", X[-1] = " + str(X[-1]) + ", Y[-1] = " + str(Y[-1]) + ", X.shape = " + str(X.shape) + ", Y.shape = " + str(Y.shape))
     Z = twod(list(map(lambda x:list(map(lambda y:msmts[int(x)][int(y)],Y)),X)))
     X, Y = np.meshgrid(X, Y)
     means = list(map(lambda row: avg(row), Z))
@@ -40,7 +57,7 @@ def plotsurface():
         return list(map(lambda y:(Z[x][y]-means[x])/(maxs[x]),range(len(Z[x]))))
     Z = twod(list(map(normX, range(len(Z)))))
 
-    print("Z.shape = " + str(Z.shape) + ", Z = " + str(Z))
+    print("Z.shape = " + str(Z.shape) + ", X.shape = " + str(X.shape) + ", Y.shape = " + str(Y.shape))
 
     # Plot the surface.
     surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
@@ -48,14 +65,20 @@ def plotsurface():
 
     # Customize the z axis.
     ax.set_zlim(-1.01, 1.01)
+    ax.set_zlabel('Normalized value')
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Process metric')
     ax.zaxis.set_major_locator(LinearLocator(10))
     ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
 
     # Add a color bar which maps values to colors.
     fig.colorbar(surf, shrink=0.5, aspect=5)
-
+    
+    plt.title('Normalized Process Load (% CPU, Utilization, Memory) By Time')
     plt.show()
 
 
 if __name__ == "__main__":
-    plotsurface()
+    #plotsurface()
+    v = [12,1,1,1,2,2,0,4,4,0,0,0,0,0,0,0]
+    print("sorted " + str(v) + " to " + str(sortPID(v)))
