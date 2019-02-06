@@ -45,8 +45,8 @@ def repeat(x, n):
 
 
 # Generates test training labels
-def test_labels(model, X = None, sample_size = 5):
-    (labels, noise) = ([], 1.0) 
+def test_labels(model, X = None, labels = [], sample_size = 5):
+    noise = 1.0 
     symbols = [lambda x: 0 if x<50 else 1, math.factorial, math.exp, math.log, math.sqrt, math.cos, math.sin, math.tan, math.erf]
     for i in range(sample_size):
         for s in range(len(symbols)):
@@ -55,7 +55,7 @@ def test_labels(model, X = None, sample_size = 5):
                     #res = (1 - uniform(0.0, noise)) * symbols[s](k+1)
                     val = symbols[s](k+1) #if msmt==0 else derivative(symbols[s], k+1, msmt)
                     return (1 - uniform(0.0, noise)) * val
-                labels.append([repeat(list(map(measure, range(n_msmt))), n_entries), repeat(s, n_entries)])
+                labels.append([0.0, repeat(list(map(measure, range(n_msmt))), n_entries), repeat(s, n_entries)])
             logger.debug("test_labels done with symbol " + str(symbols[s]))
     logger.debug("test_labels.labels = " + str(labels))
     return labels
@@ -99,11 +99,12 @@ def set_lstm_initialized():
 
 
 def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
-    test_data = []
+    (test_data, costs, labels) = ([], [], [])
 
     # Training
     for epoch in range(0, n_epochs):
-        batch_data = labelfn(model, X)
+        labels = labelfn(model, X, list(labels))
+        batch_data = list(map(lambda l: l[1:], labels))
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
         for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
@@ -116,28 +117,38 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
                ", batch " + str(i+1) + " of " + str(len(train_data)) + 
                ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
             set_lstm_initialized()
-            mean_cost = total_cost / len(train_data)
-            logger.debug("Mean_cost = " +str(mean_cost))
-        logger.debug("Epoch = " + str(epoch) + ", train_data = " +str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
+            costs.append(total_cost)
+        logger.debug("Epoch = " + str(epoch) + ", train_data = " +str(shape(train_data)) + ", test_data = " + str(shape(test_data))+", cost=" +str(total_cost))
 
+    pickleconc("train_costs.pickle", costs)
     return test(model, X, Y, test_data)
 
 
 def test(model, X, Y, test_data):
-
-    pred = tf.nn.softmax(model)
-    correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
-    tf_accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+    #pred = tf.nn.softmax(model)
+    #correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
+    labels = tf.reshape(Y, [1, n_coeff])
+    preds = tf.reshape(model, [1, n_coeff])
+    tf_mse = tf.losses.mean_squared_error(labels, preds)
+    tf_cost = tf.reduce_mean(tf.square(model - Y))
     test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt, n_entries)
     test_y = to_size(list(map(lambda t: t[1], test_data)), 1, n_coeff)
     logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + ", X = " + str(X) + ", Y = " + str(Y))
-    accuracy = tf_run(tf_accuracy, feed_dict={X:test_x, Y:test_y})
-    logger.debug("LSTM Accuracy = " + str(accuracy))
-
-    return [model, X, accuracy]
+    #tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)
+    #tf_recall = tf.metrics.recall(labels=labels, predictions=preds)
+    #tf_precision = tf.metrics.precision(labels=labels, predictions=preds)
+    #tf_tn = tf.metrics.true_negatives(labels=labels, predictions=preds)
+    #tf_fp = tf.metrics.false_positives(labels=labels, predictions=preds)
+    [mse, cost, output] = tf_run([tf_mse, tf_cost, model], feed_dict={X:test_x, Y:test_y})
+    #[accuracy, recall, precision, tn, fp] = tf_run(
+    #       tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
+    #       feed_dict={X:test_x, Y:test_y}) 
+    logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost) + ", output = " + str(output))
+    pickleadd("test_costs.pickle", mse)
+    return [model, X, mse]
 
 
 
 if __name__ == "__main__":
-    tune_model(2)
+    tune_model(1)
     logger.debug("done")

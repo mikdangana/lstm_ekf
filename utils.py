@@ -88,9 +88,9 @@ def flatlist(matrix):
     return list(v)
 
 
-def pickleconc(filename, value):
+def pickleconc(filename, values):
     history = pickleload(filename) or []
-    pickledump(filename, history + value)
+    pickledump(filename, history + values)
 
 
 def pickleadd(filename, value):

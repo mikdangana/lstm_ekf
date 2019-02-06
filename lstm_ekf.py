@@ -18,10 +18,10 @@ def measurements():
 
 
 
-def predict_coeffs(model, newdata, X):
+def predict_coeffs(model, newdata, X, randomize=False):
     logger.info("LSTM initialized = " + str(lstm_initialized()))
-    if not lstm_initialized():
-        return list(map(lambda n: random(), range(n_msmt)))
+    if not lstm_initialized() or randomize:
+        return list(map(lambda n: uniform(0,10), range(n_msmt)))
     input = to_size(newdata, n_msmt, n_entries)
     output = tf_run(model, feed_dict={X:input})
     logger.debug("Coeff output = " + str(output) + ", predict = " + str(output[-1]) + ", input = " + str(shape(newdata)))
@@ -50,10 +50,9 @@ def baseline_accuracy(model, sample_size, X):
 
 
 # Generates training labels by a bootstrap active-learning approach 
-def bootstrap_labels(model, X, sample_size = 10, action_interval = 40):
-    (labels, ekf, msmts, history, pred_per_sample) = ([], None, [], [], 10)
-    ekf_baseline = baseline_accuracy(model, sample_size, X)
-    accuracies = []
+def bootstrap_labels(model, X, labels=[], sample_size=10, action_interval=40):
+    (labels, msmts, history, pred_per_sample) = ([], [], [], 10)
+    (accuracies, ekf_baseline) = ([], baseline_accuracy(model, sample_size, X))
     for i in range(0, sample_size):
         new_msmts = measurements()
         logger.info("sample="+str(i) + ", new_msmts = " + str(shape(new_msmts)))
@@ -61,17 +60,16 @@ def bootstrap_labels(model, X, sample_size = 10, action_interval = 40):
             (best_coeffs, best_accuracy) = ([], 0)
             for j in range(0, pred_per_sample):
                 coeffs = predict_coeffs(model, msmts, X)
+                random_coeffs = predict_coeffs(model, msmts, X, True)
                 logger.info("pre build_ekf.coeffs = " + str(coeffs))
                 ekf = build_ekf(coeffs, [msmts]) 
+                rekf = build_ekf(random_coeffs, [msmts]) 
                 accs, accuracy = ekf_accuracies(ekf, new_msmts)
+                raccs, raccuracy = ekf_accuracies(rekf, new_msmts)
                 logger.info("sample = " + str(i) + " of " + str(sample_size) + ", pred_per_sample = " + str(j) + " of " + str(pred_per_sample) + ", coeffs = " + str(coeffs) + ", accuracy = " + str(accuracy) + ", best_accuracy = " + str(best_accuracy))
-                #if accuracy >= best_accuracy: # TODO max(best_acc, ekf_base[i]):
-                 #   best_coeffs = to_size(coeffs, 1, n_coeff)
-                  #  best_accuracy = accuracy
                 accuracies.append([accs, best_accuracy])
                 labels.append([accuracy, to_size(msmts, n_msmt, n_entries), to_size(coeffs, 1, n_coeff)])
-            #if len(best_coeffs): # Only add labels if accuracy > ekf_baseline
-                #labels.append([to_size(msmts, n_msmt, n_entries), best_coeffs])
+                labels.append([raccuracy, to_size(msmts, n_msmt, n_entries), to_size(random_coeffs, 1, n_coeff)])
             sleep(0.5)
             if i % action_interval == 0:
                 do_action(ekf, msmts)
@@ -80,7 +78,8 @@ def bootstrap_labels(model, X, sample_size = 10, action_interval = 40):
     pickleconc("boot_accuracies.pickle", list(map(lambda a:a[-1], accuracies)))
     pickleconc("boot_profiles.pickle", list(map(lambda a:a[0], accuracies)))
     labels.sort(key = lambda v: v[0], reverse=True)
-    return list(map(lambda v: v[1:], labels[0:int(0.1 * len(labels))]))
+    logger.info("batch labels = " + str(list(map(lambda l:l[0], labels[0:int(0.1*len(labels))]))))
+    return labels[0:int(0.1 * len(labels))]
 
 
 def track_accuracies(ekf, count, filename):
