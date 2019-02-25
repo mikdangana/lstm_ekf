@@ -83,23 +83,22 @@ def test_ekf():
     fns = [lambda x: 0 if x<50 else 1, math.exp, math.sin, math.erf]
     coeffs = flatlist(identity(int(sqrt(n_coeff-n_msmt*n_msmt)))) + flatlist(identity(n_msmt));
     logger.info("coeffs = " + str(len(coeffs)) + ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
-    accuracies = []
+    accuracies = [] 
     for n in range(len(fns)):
         z_data = []
-        for v in range(300):
+        for v in (array(range(300))/30 if n==2 else range(100)):
             msmt = map(lambda m: fns[m](v) if m<=n else random(), range(n_msmt))
             z_data.append(list(msmt))
         split = int(0.75 * len(z_data))
         (train, test) = (z_data[0 : split], z_data[split : ])
-        logger.info("train = " + str(len(train)) + ", train[0] = " + str(train[0]))
+        logger.info("train = " + str(len(train)) + ", train[2] = " + str(train[2]))
         ekf = build_ekf(coeffs, train)
         logger.info("test = " + str(len(test)) + ", test[0] = " + str(test[0]) + ", fn = " + str(n) + " of " + str(len(fns)))
         means = list(map(lambda t: ekf_accuracy(ekf, t), test))
         accuracies.append(avg(means)) 
         logger.info("accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) + " of " + str(len(fns)))
-        predictions = ekf_track(coeffs, z_data)
+        predictions = ekf_track(coeffs, list(map(lambda d:repeat(d[2],4), z_data)))
         pickledump("predictions" + str(n) + ".pickle", predictions)
-        # plotmetric(predictions, n)
     logger.info("accuracies = " + str(accuracies))
     return
 

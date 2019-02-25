@@ -107,6 +107,7 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
         batch_data = list(map(lambda l: l[1:], labels))
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
+        #if (isconverged(list(map(lambda l: l
         for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
             # Remember 'cost' contains the model
             _, total_cost = tf_run([train_op, cost], feed_dict =

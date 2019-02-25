@@ -2,8 +2,10 @@ import os, re, sys, traceback
 import yaml, logging, logging.handlers
 import pickle
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, dot, divide, subtract, size, append
+from numpy import ones, dot, divide, subtract, size, append, transpose
+from numpy import gradient, mean, std
 from numpy.linalg import inv
+from scipy import stats
 from functools import reduce
 from random import random
 from time import time
@@ -116,9 +118,53 @@ def pickleload(filename):
     return None
 
 
+
+def isconverged(data, confidence=0.95):
+    return len(list(filter(lambda c: c>=confidence, convergence(data))))>0
+
+
+def convergence(data):
+    (stat, stds, window, step, t) = ([], [], 3, 100, 0.03)
+    for i in range(int(len(data)/step)):
+        stds.append(std(data[i*step:(i+1) * step]))
+        m = mean(stds) 
+        (l, u) = (m-t, m+t) 
+        win = stds[-window:]
+        confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
+        stat.append(confidence)
+    return stat[1:] # Ignore 1st window, its always 100% by definition
+
+
 def twod(lst):
     data = array([[]])
     for row in lst:
         data = append(data, row)
     data.resize(len(lst), len(lst[0]))
     return data
+
+
+# size of diag is row_count
+# size of half is ( row_count^2 - row_count ) / 2
+def symmetric(diag, half):
+    (data, dmatrix, offset, rows) = ([], [], 0, len(diag))
+    for i in range(rows):
+        data.append([])
+        dmatrix.append([])
+        for j in range(rows):
+            if i==j:
+                dmatrix[-1].append(diag[i])
+                data[-1].append(0)
+            elif j > i:
+                data[-1].append(half[offset])
+                offset = offset + 1
+                dmatrix[-1].append(0)
+            else:
+                data[-1].append(0)
+                dmatrix[-1].append(0)
+    upper = twod(data)
+    return upper + transpose(upper) + twod(dmatrix)
+
+
+if __name__ == "__main__":
+    print(symmetric([1,2,3], [4,5,6]))
+    print(symmetric([1,2,3,4], [5,6,7,8,9,10]))

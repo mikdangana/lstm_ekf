@@ -16,9 +16,9 @@ lint:
 
 test: clean
 	@echo \n"Testing...\n"
-	python ekf.py
-	python lstm.py
+	python src/ekf.py
+	python src/lstm.py
 
 run:
 	@echo "\nRunning...\n"
-	python lstm_ekf.py
+	python src/lstm_ekf.py

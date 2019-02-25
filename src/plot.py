@@ -1,5 +1,6 @@
 from pylab import *
-from numpy import array
+from numpy import array, gradient, mean, std
+from scipy import stats
 from math import log
 from getopt import getopt, GetoptError
 from surface3d import plotsurface
@@ -25,38 +26,86 @@ def loadfiles(filenames):
     return data
 
 
-def plotpredictions(arg):
-    predictions, metric = load(arg)
+def plotpredictions(args):
+    predictions, metric = load(args[0] if len(args) else "")
     x = list(map(lambda x: x[0][metric], predictions))
     y = list(map(lambda x: x[1][0][0], predictions))
 
     xline, = plot(x)
     yline, = plot(y)
 
-    lgd = ['x: x<50 ? 0 : 1', 'exp(x)', 'sin(x)', 'erf(x)']
+    lgd = ['step(x,50)', 'exp(x)', 'sin(x)', 'erf(x)']
 
     legend((xline, yline), (lgd[metric], 'EKF.x_prior'))
+    title('EKF Prior Prediction Vs ' + lgd[metric])
     show()
 
 
 
 def plotlines(filenames):
+    isGradient = len(list(filter(lambda f: f=="gradient", filenames))) 
+    intervals = list(filter(lambda f: ":" in f, filenames))
+    indices = list(filter(lambda f : f.isdigit(), filenames))
+    filenames = list(filter(lambda f : not f.isdigit() and f!="gradient" and not ":" in f, filenames))
     data = loadfiles(filenames)
     if not len(data):
         return
-    x = arange(0, len(data[0]), 1)
 
-    lgd = {'tuned_accuracies.pickle': 'Tuned Accuracy', 'raw_accuracies.pickle': 'Plain Accuracy'}
+    if len(indices):
+        if isGradient:
+            data = list(map(lambda i: gradient(array(list(map(lambda r:r[int(i)],data[0])))), indices)) 
+        else:
+            data = list(map(lambda i: list(map(lambda r:abs(r[int(i)]),data[0])), indices)) 
 
+    if len(intervals):
+        (start, end) = intervals[0].split(":")
+        data[0] = data[0][int(start):int(end)]
+    print("plotlines().data[0] = " + str(len(data[0])) + ", std = " + str(std(data[0])) + ", mean = " + str(mean(data[0])) + ", convergence = " + str(is_converged(data[0])))
+    x = arange(0, len(data[0]), 1) 
+
+    lgd = {'tuned_accuracies.pickle': 'Tuned Accuracy', 'raw_accuracies.pickle': 'Plain Accuracy', 'train_costs.pickle': 'Training Mean Square Error', 'test_costs.pickle': 'Testing Mean Squared Error', 'boot_coeffs.pickle': 'Single Coefficients'+(' Gradient ' if isGradient else '')+' Values' }
+
+    xlabel('Interval')
     if len(filenames) <= 1:
         plot(x, data[0], 'r--')
+        ylabel(lgd[filenames[0]] + '(red)')
+        title(lgd[filenames[0]] + ' vs Time')
     else:
         plot(x, data[0], 'r--', x, data[1], 'g^', label='L2')
-        xlabel('Interval')
         ylabel(lgd[filenames[0]] + '(red) & ' + lgd[filenames[1]] + '(green)')
         title('Comparing Tuned & Plain EKF Accuracy vs Time')
     show()
 
+
+def delta_convergence(data):
+    (deltas, step, t) = ([], 100, 0.03)
+    for i in range(int(len(data)/step)):
+        j,k = (i*step, (i + 1) * step)
+        deltas.append(mean(gradient(data[j:k])))
+    return deltas
+
+
+def is_converged(data, confidence=0.95):
+    return len(list(filter(lambda c: c>=confidence, convergence(data))))>0
+
+
+def convergence(data):
+    (stat, stds, window, step, t) = ([], [], 3, 100, 0.03)
+    for i in range(int(len(data)/step)):
+        n = (i+1) * step
+        stds.append(std(data[i*step:n]))
+        #s = std(stds)
+        m = mean(stds) #stds[-window] if len(stds)>=window else stds)
+        (l, u) = (m-t, m+t) #stats.norm.interval(t, loc=m, scale=1)
+        #win = list(map(abs, data[i * step: n]))
+        #grads = list(map(lambda x:abs(x[1]-x[0]), zip(stds[0:-1],stds[1:])))
+        #print("win = " + str(win) + ", bounds = " + str((l,u)) + ", stds = " + str(stds) + ", grads = " + str(grads) + ", stds.mean = " + str(mean(stds)))
+        #confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
+        win = stds[-window:]
+        confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
+        stat.append(confidence)
+    print("confidences = " + str(stat))
+    return stat[1:] # Ignore 1st window, its always 100% by definition
 
 
 def repeat(v, n):
@@ -112,14 +161,15 @@ def main():
         usage()
         exit(2)
     for o, a in opts:
+        arg = args + [a] if len(a) else args
         if o in ( "-s", "--scatter" ):
-            plotscatter(args)
+            plotscatter(arg)
         elif o in ( "-l", "--line" ):
-            plotlines(args)
+            plotlines(arg)
         elif o in ( "-p", "--predictions" ):
-            plotpredictions(args)
+            plotpredictions(arg)
         elif o in ( "-3", "--surface3d" ):
-            plotsurface(args)
+            plotsurface(arg)
         else:
             usage()
     if not len(opts):
