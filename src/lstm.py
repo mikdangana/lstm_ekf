@@ -27,7 +27,8 @@ def RNN(x, weights, biases):
 
     # generate prediction
     outputs,states = tf.contrib.rnn.static_rnn(cell,inputs=[x],dtype=tf.float32)
-    logger.info("inputs = " + str(x) + ", outputs = " + str(outputs) + ", outputs.trunced = " + str(outputs[-1]) + ", states = " + str(states) + ", weights = " + str(weights['out']) + ", biases = " + str(biases['out']))
+    logger.info("inputs = " + str(x) + ", outputs = " + str(outputs) + 
+        ", weights = " + str(weights) + ", biases = " + str(biases))
 
     # there are n_entries outputs but
     # we only want the last output
@@ -40,6 +41,7 @@ def to_size(data, width, entries = n_entries):
     logger.debug("data = " + str(len(data)) + ", input = " + str(shape(input)))
     return input
 
+
 def repeat(x, n):
     return list(map(lambda i: x, range(n)))
 
@@ -47,13 +49,12 @@ def repeat(x, n):
 # Generates test training labels
 def test_labels(model, X = None, labels = [], sample_size = 5):
     noise = 1.0 
-    symbols = [lambda x: 0 if x<50 else 1, math.factorial, math.exp, math.log, math.sqrt, math.cos, math.sin, math.tan, math.erf]
+    symbols = [lambda x: 0 if x<50 else 1, math.exp, math.sin] #math.factorial, math.exp, math.log] #, math.sqrt, math.cos, math.sin, math.tan, math.erf]
     for i in range(sample_size):
         for s in range(len(symbols)):
             for k in range(10):
                 def measure(msmt):
-                    #res = (1 - uniform(0.0, noise)) * symbols[s](k+1)
-                    val = symbols[s](k+1) #if msmt==0 else derivative(symbols[s], k+1, msmt)
+                    val = symbols[s](k+1) 
                     return (1 - uniform(0.0, noise)) * val
                 labels.append([0.0, repeat(list(map(measure, range(n_msmt))), n_entries), repeat(s, n_entries)])
             logger.debug("test_labels done with symbol " + str(symbols[s]))
@@ -72,11 +73,11 @@ def tf_run(*args, **kwargs):
 def tune_model(n_epochs = default_n_epochs, labelfn = test_labels):
 
     X = tf.placeholder("float", [n_entries, n_msmt])
-    Y = tf.placeholder("float", [n_coeff, 1])
+    Y = tf.placeholder("float", [n_entries, n_coeff])
 
     # RNN output node weights and biases
     weights = {'out':tf.Variable(tf.ones([n_hidden,n_coeff]),name='w')}
-    biases = {'out': tf.Variable(tf.zeros([1, n_coeff]), name='b')}
+    biases = {'out': tf.Variable(tf.zeros([n_entries, n_coeff]), name='b')}
 
     model = RNN(X, weights, biases)
     logger.debug("model = " + str(model))
@@ -112,14 +113,16 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
             # Remember 'cost' contains the model
             _, total_cost = tf_run([train_op, cost], feed_dict =
                 {X: to_size(batch_x, n_msmt, n_entries), 
-                 Y: to_size(batch_y, 1, n_coeff)})
+                 Y: to_size(batch_y, n_coeff, n_entries)})
             logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
                str(shape(batch_y)) + ", cost = " + str(total_cost) + 
                ", batch " + str(i+1) + " of " + str(len(train_data)) + 
                ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
             set_lstm_initialized()
             costs.append(total_cost)
-        logger.debug("Epoch = " + str(epoch) + ", train_data = " +str(shape(train_data)) + ", test_data = " + str(shape(test_data))+", cost=" +str(total_cost))
+        logger.debug("Epoch = " + str(epoch) + ", train_data = " +
+            str(shape(train_data)) + ", test_data = " + str(shape(test_data))+
+            ", cost=" +str(total_cost))
 
     pickleconc("train_costs.pickle", costs)
     return test(model, X, Y, test_data)
@@ -128,13 +131,14 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
 def test(model, X, Y, test_data):
     #pred = tf.nn.softmax(model)
     #correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
-    labels = tf.reshape(Y, [1, n_coeff])
-    preds = tf.reshape(model, [1, n_coeff])
+    labels = tf.reshape(Y, [n_coeff, n_entries])
+    preds = tf.reshape(model, [n_coeff, n_entries])
     tf_mse = tf.losses.mean_squared_error(labels, preds)
     tf_cost = tf.reduce_mean(tf.square(model - Y))
     test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt, n_entries)
-    test_y = to_size(list(map(lambda t: t[1], test_data)), 1, n_coeff)
-    logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + ", X = " + str(X) + ", Y = " + str(Y))
+    test_y = to_size(list(map(lambda t: t[1], test_data)), n_coeff, n_entries)
+    logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + 
+        ", X = " + str(X) + ", Y = " + str(Y))
     #tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)
     #tf_recall = tf.metrics.recall(labels=labels, predictions=preds)
     #tf_precision = tf.metrics.precision(labels=labels, predictions=preds)
@@ -144,7 +148,8 @@ def test(model, X, Y, test_data):
     #[accuracy, recall, precision, tn, fp] = tf_run(
     #       tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
     #       feed_dict={X:test_x, Y:test_y}) 
-    logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost) + ", output = " + str(output))
+    logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost) + 
+        ", (output,test_y) = " + str(list(zip(output, test_y))))
     pickleadd("test_costs.pickle", mse)
     return [model, X, mse]
 

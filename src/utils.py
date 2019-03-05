@@ -124,11 +124,11 @@ def isconverged(data, confidence=0.95):
 
 
 def convergence(data):
-    (stat, stds, window, step, t) = ([], [], 3, 100, 0.03)
+    (stat, stds, window, step, tolerance) = ([], [], 3, 100, 0.03)
     for i in range(int(len(data)/step)):
         stds.append(std(data[i*step:(i+1) * step]))
         m = mean(stds) 
-        (l, u) = (m-t, m+t) 
+        (l, u) = (m-tolerance, m+tolerance) 
         win = stds[-window:]
         confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
         stat.append(confidence)
@@ -145,7 +145,7 @@ def twod(lst):
 
 # size of diag is row_count
 # size of half is ( row_count^2 - row_count ) / 2
-def symmetric(diag, half):
+def symmetric(diag, half = None):
     (data, dmatrix, offset, rows) = ([], [], 0, len(diag))
     for i in range(rows):
         data.append([])
@@ -155,7 +155,7 @@ def symmetric(diag, half):
                 dmatrix[-1].append(diag[i])
                 data[-1].append(0)
             elif j > i:
-                data[-1].append(half[offset])
+                data[-1].append(half[offset] if half else 0)
                 offset = offset + 1
                 dmatrix[-1].append(0)
             else:
@@ -167,4 +167,5 @@ def symmetric(diag, half):
 
 if __name__ == "__main__":
     print(symmetric([1,2,3], [4,5,6]))
+    print(symmetric([1,2,3]))
     print(symmetric([1,2,3,4], [5,6,7,8,9,10]))

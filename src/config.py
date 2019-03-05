@@ -1,5 +1,5 @@
 import yaml, logging, logging.handlers
-import ast
+import ast, asyncio
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
@@ -7,17 +7,10 @@ from functools import reduce
 from random import random
 from utils import *
 
-logger = logging.getLogger("Kalman_Filter")
-logger.setLevel(logging.DEBUG)
 
-logging.basicConfig(filename='lstm_ekf.log', 
-    format='%(levelname)s %(asctime)s in %(funcName)s() ' +
-        '%(filename)s-%(lineno)s: %(message)s \n', level=logging.DEBUG)
-
-
-n_msmt = 8 * 3 # Kalman z
-n_coeff = n_msmt * n_msmt * 2 # Kalman x
-n_entries = 1
+n_msmt = 8 * 6 # Kalman z
+n_coeff = n_msmt * n_msmt * 3 # Kalman x
+n_entries = 3
 # number of units in RNN cell
 n_hidden = 2
 learn_rate = 0.00001
@@ -27,6 +20,7 @@ config = None
 state_file = "lstm_ekf.state"
 initialized = False
 config = None
+procs = []
 
 
 def do_action(ekf, msmts):
@@ -70,7 +64,20 @@ def run_action(action):
                 os_run(step)
             run_state[res] = int(run_state[res]) - 1
     save_state(run_state)
-    return True
+    return true
+
+
+def run_async(action):
+    cmd = [get_config(action)]
+    proc = yield asyncio.create_subprocess_exec(*cmd)
+
+    procs.append(proc)
+    return proc
+    
+
+def close_asyncs():
+    for proc in procs:
+        stdout, stderr = yield proc.terminate()
 
 
 def get_steps(*cmd_path):
@@ -78,7 +85,7 @@ def get_steps(*cmd_path):
     variables = dict(ast.literal_eval(get_config("variables")))
     cfg = ast.literal_eval(get_config(cmd_path))
 
-    logger.debug("variables = " + str(variables.items()) + ", cfg = " + str(cfg))
+    logger.debug("variables =" + str(variables.items()) + ", cfg = " + str(cfg))
     for step in (cfg if cfg else []):
         for cmd in step if isinstance(step, list) else [step]: 
             for k,v in variables.items():

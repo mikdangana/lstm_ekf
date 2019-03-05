@@ -16,48 +16,59 @@ logger = logging.getLogger("Kalman_Filter")
 
 
 # Test the accuracy of an EKF using the provide measurement data
-def ekf_accuracy(ekf, msmt):
-    return ekf_accuracies(ekf, msmt)[-1]
+def ekf_accuracy(ekf, msmt, indices=None, label=""):
+    return ekf_accuracies(ekf, msmt, indices, label)[-1]
 
 
 # Test the accuracies of an EKF per measurement metric
-def ekf_accuracies(ekf, msmt):
+def ekf_accuracies(ekf, msmt, indices=None, label=""):
     ekf.predict()
     logger.info("state_ids = " + str(state_ids) + ", msmt = " + str(len(msmt)))
     (state, n_state) = ([msmt[i] for i in state_ids], len(state_ids))
     state = array(state)
     state.resize(n_state, 1)
-    logger.info("state = " + str(state) + ", n_state = " + str(n_state) + ", prior = " + str(ekf.x_prior))
     # accuracy is average of 1 - 'point-wise scaled delta'
-    accuracy = lambda p: max(1 - abs(p[0]-p[1])/max(p[1], 1e-9), 0)
+    accuracy = lambda pt: max(1 - abs((pt[1]-pt[0])/max(pt[0],1e-9)), 0)
     nums = lambda ns : map(lambda n: n[0], ns)
-    accuracies = list(map(accuracy, zip(nums(ekf.x_prior), nums(state))))
-    mean = avg(accuracies)
-    logger.info("x_prior = " + str(shape(ekf.x_prior)) + ", accuracy = " + str(mean))
+    accuracies = list(map(accuracy, zip(nums(state), nums(ekf.x_prior))))
+    mean = avg([accuracies[i] for i in indices] if indices else accuracies) 
+    logger.info(label + " x_prior = " + str(shape(ekf.x_prior)) + 
+        ", zip(prior,state,accuracies) = " + 
+        str(list(zip(nums(ekf.x_prior), nums(state), accuracies))) + 
+        ", accuracy = " + str(mean))
     return [[accuracies, list(nums(state))], mean]
 
 
 
 # Build and update an EKF using the provided measurement data
 def build_ekf(coeffs, z_data): 
-    dimx = int(math.sqrt(n_coeff - n_msmt*n_msmt))
+    dimx = n_msmt #int(math.sqrt(n_coeff - n_msmt*n_msmt))
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    q = array(coeffs[0:dimx*dimx])
-    q.resize(dimx, dimx) # TODO need to determine size
-    ekf.Q = q
-    r = array(coeffs[-n_msmt*n_msmt:])
-    r = r.resize(n_msmt, n_msmt) # TODO need to determine size
-    return update_ekf(ekf, z_data, r)
+    if coeffs:
+        #q = symmetric(array(coeffs[0:dimx])) #array(coeffs[0:dimx*dimx])
+        q = array(coeffs[0:dimx*dimx])
+        q.resize(dimx, dimx) # TODO need to determine size
+        ekf.Q = q
+        #dg = array(coeffs[n_msmt*n_msmt:n_msmt*(n_msmt+1)])
+        #dg = array(coeffs[n_msmt:n_msmt*2])
+        #half = array(coeffs[n_msmt*(n_msmt+1):pow(n_msmt*(n_msmt+1), 2)])
+        f = array(coeffs[n_msmt*n_msmt:n_msmt*n_msmt*2])
+        f.resize(n_msmt, n_msmt) # TODO need to determine size
+        ekf.F = f #symmetric(dg)
+        #logger.info("ekf.F.dg=" + str(dg)+ ", coeffs.size=" + str(len(coeffs)))
+        #r = symmetric(array(coeffs[-n_msmt:]))
+        r = array(coeffs[-n_msmt*n_msmt:])
+        r = r.resize(n_msmt, n_msmt) # TODO need to determine size
+        return update_ekf(ekf, z_data, r)
+    return update_ekf(ekf, z_data)
 
 
 def update_ekf(ekf, z_data, R = None):
     hjacobian = lambda x: identity(len(x))
     hx = lambda x: x
-    #logging.debug("EKF.x.shape = " + str(shape(ekf.x)) + ", q.shape = " + str(shape(ekf.Q)) + ", q.type = " + str(type(ekf.Q)) + ", z_data = " + str(shape(z_data)))
     for z in z_data:
         z = array(z)
         z.resize(n_msmt, 1)
-        #logger.info("update.z = " + str(shape(z)) + ", x_prior = " + str(shape(ekf.x_prior)) + ", hjacobian = " + str(hjacobian([1, 2])))
         ekf.update(z, hjacobian, hx, R)
     return ekf
 
@@ -81,8 +92,9 @@ def plot_ekf():
 # Testbed to unit test EKF using hand-crafted data
 def test_ekf():
     fns = [lambda x: 0 if x<50 else 1, math.exp, math.sin, math.erf]
-    coeffs = flatlist(identity(int(sqrt(n_coeff-n_msmt*n_msmt)))) + flatlist(identity(n_msmt));
-    logger.info("coeffs = " + str(len(coeffs)) + ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
+    coeffs = flatlist(identity(int(sqrt(n_coeff-n_msmt*n_msmt)))) + flatlist(identity(n_msmt))
+    logger.info("coeffs = " + str(len(coeffs)) + 
+        ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
     accuracies = [] 
     for n in range(len(fns)):
         z_data = []
@@ -91,13 +103,15 @@ def test_ekf():
             z_data.append(list(msmt))
         split = int(0.75 * len(z_data))
         (train, test) = (z_data[0 : split], z_data[split : ])
-        logger.info("train = " + str(len(train)) + ", train[2] = " + str(train[2]))
+        logger.info("train=" + str(len(train)) + ", train[2]=" + str(train[2]))
         ekf = build_ekf(coeffs, train)
-        logger.info("test = " + str(len(test)) + ", test[0] = " + str(test[0]) + ", fn = " + str(n) + " of " + str(len(fns)))
+        logger.info("test=" + str(len(test)) + ", test[0]=" + str(test[0]) + 
+            ", fn = " + str(n) + " of " + str(len(fns)))
         means = list(map(lambda t: ekf_accuracy(ekf, t), test))
         accuracies.append(avg(means)) 
-        logger.info("accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) + " of " + str(len(fns)))
-        predictions = ekf_track(coeffs, list(map(lambda d:repeat(d[2],4), z_data)))
+        logger.info("accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) +
+            " of " + str(len(fns)))
+        predictions =ekf_track(coeffs,list(map(lambda d:repeat(d[2],4),z_data)))
         pickledump("predictions" + str(n) + ".pickle", predictions)
     logger.info("accuracies = " + str(accuracies))
     return
