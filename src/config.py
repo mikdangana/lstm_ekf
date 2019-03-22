@@ -5,22 +5,31 @@ from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
 from functools import reduce
 from random import random
+from subprocess import Popen
 from utils import *
 
 
-n_msmt = 8 * 6 # Kalman z
-n_coeff = n_msmt * n_msmt * 3 # Kalman x
-n_entries = 3
+n_msmt = 8 * 3 # Kalman z
+n_coeff = n_msmt * 3 # Kalman x
+n_entries = 4
+n_lstm_out = n_coeff
 # number of units in RNN cell
 n_hidden = 2
 learn_rate = 0.00001
-default_n_epochs = 1000
+n_epochs = 10
+n_iterations = 200
 state_ids = range(n_msmt)
 config = None
 state_file = "lstm_ekf.state"
 initialized = False
 config = None
+norms = [1000, 20, 20, 1000000000, 1000000000, 10000, 1, 1]
 procs = []
+n_user_rate_s = 0.0000001
+n_users = 10000
+
+
+logger = logging.getLogger("Config")
 
 
 def do_action(ekf, msmts):
@@ -66,20 +75,6 @@ def run_action(action):
     save_state(run_state)
     return true
 
-
-def run_async(action):
-    cmd = [get_config(action)]
-    proc = yield asyncio.create_subprocess_exec(*cmd)
-
-    procs.append(proc)
-    return proc
-    
-
-def close_asyncs():
-    for proc in procs:
-        stdout, stderr = yield proc.terminate()
-
-
 def get_steps(*cmd_path):
     steps = []
     variables = dict(ast.literal_eval(get_config("variables")))
@@ -122,8 +117,53 @@ def get_config(path, params = []):
     return val
 
 
+def run_async(cmd_cfg):
+    cmd = get_config(cmd_cfg).split(" ")
+    logger.info("cmd_cfg = " + cmd_cfg + ", cmd = " + str(cmd))
+    procs.append(Popen(cmd))
+    logger.info("launched process "+str(procs[-1].pid)+" for cmd = "+str(cmd))
+    return procs[-1]
+
+
+def close_async():
+    for proc in procs:
+        proc.terminate()
+        logger.info("process " + str(proc.pid) + " terminated")
+
+
+def usage():
+    print("\nUsage: " + sys.argv[0] + " [-h | -e | -i | -2d] [n]\n" +
+        "\nSets run config parameters\n" +
+        "\nOptional arguments:\n\n" +
+        "-h, --help              Show this help message and exit\n" +
+        "-2d, --twod             Set the 2d (vs diagonal) n_coeff value\n" +
+        "-e, --epochs      n     Set number of epochs\n" +
+        "-i, --iterations  n     Set the number of iterations")
+    
+
+def process_args():
+    global n_coeff
+    global n_epochs
+    global n_iterations
+    args = sys.argv[1:]
+    for i,j in zip(args, args[1:] + ['']):
+        if i == "--twod" or i == "-2d":
+            n_coeff = n_msmt * n_msmt * 3
+            logger.info("set n_coeff to " + str(n_coeff))
+        elif i == "--epochs" or i == "-e":
+            n_epochs = int(j)
+            logger.info("set n_epochs to " + j)
+        elif i == "--iterations" or i == "-i":
+            n_iterations = int(j)
+            logger.info("set test iterations to " + j)
+        elif i == "--help" or i == "-h":
+            usage()
+            exit()
+
 
 if __name__ == "__main__":
     load_config()
     print("Loaded config = " + str(config))
     print("model-update-cmd = " + str(get_config(['model-update-cmd']))) 
+    run_async("activity-cmd")
+    close_asyncs()

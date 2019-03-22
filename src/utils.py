@@ -10,7 +10,7 @@ from functools import reduce
 from random import random
 from time import time
 
-logger = logging.getLogger("Kalman_Filter")
+logger = logging.getLogger("Utils")
 logger.setLevel(logging.DEBUG)
 
 logging.basicConfig(filename='lstm_ekf.log', 
@@ -18,6 +18,8 @@ logging.basicConfig(filename='lstm_ekf.log',
         '%(filename)s-%(lineno)s: %(message)s \n', level=logging.DEBUG)
 
 state_file = "lstm_ekf.state"
+procs = []
+
 
 def os_run(cmd):
 
@@ -104,18 +106,19 @@ def pickledump(filename, value):
     try:
         with open(filename, 'wb') as f:
             return pickle.dump(value, f)
-    except FileNotFoundError:
-        logger.error(str(filename) + " not found.")
+    except(FileNotFoundError, pickle.PicklingError):
+        logger.error(str(filename) + " erro " + str(sys.exec_info()[0]))
     return None
 
 
 def pickleload(filename):
     try:
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-    except FileNotFoundError:
-        logger.error(str(filename) + " not found.")
-    return None
+        if os.path.getsize(filename) > 0:
+            with open(filename, 'rb') as f:
+                return pickle.load(f)
+    except Exception: #(FileNotFoundError, EOFError, pickle.UnpicklingError):
+        logger.error(str(filename) + " error " + str(sys.exc_info()[0]))
+    return []
 
 
 
@@ -124,14 +127,15 @@ def isconverged(data, confidence=0.95):
 
 
 def convergence(data):
-    (stat, stds, window, step, tolerance) = ([], [], 3, 100, 0.03)
+    (stat, stds, window, step, tolerance) = ([], [], 3, int(len(data)/10), 0.03)
     for i in range(int(len(data)/step)):
         stds.append(std(data[i*step:(i+1) * step]))
-        m = mean(stds) 
-        (l, u) = (m-tolerance, m+tolerance) 
         win = stds[-window:]
+        m = mean(win) 
+        (l, u) = (m-tolerance, m+tolerance) 
         confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
         stat.append(confidence)
+    logger.info("convergence.confidences = " + str(stat[1:]) + ", data = " + str(shape(data)) + ", stds = " + str(stds))
     return stat[1:] # Ignore 1st window, its always 100% by definition
 
 
@@ -139,7 +143,7 @@ def twod(lst):
     data = array([[]])
     for row in lst:
         data = append(data, row)
-    data.resize(len(lst), len(lst[0]))
+    data.resize(len(lst), len(lst[0]) if len(shape(lst))>1 else 1)
     return data
 
 

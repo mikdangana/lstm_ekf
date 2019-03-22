@@ -125,6 +125,7 @@ def plotscatter(filenames):
     data = data[0] if len(data) else data
     if not len(data):
         return
+    print("scatter.data.shape = " + str(shape(data)))
     dimx = len(data[0][0])
     print("scatter.dimx = " + str(dimx))
     x = array(mapl(lambda i: repeat(i, dimx), range(len(data)))).flatten()

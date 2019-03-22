@@ -5,6 +5,10 @@ all: clean run
 	@echo "\nMake Done\n"
 
 
+full: clean twod clean run
+	@echo "\nMake Full Done\n"
+
+
 clean:
 	@echo "\nCleaning...\n"
 	rm --force --recursive *.pickle
@@ -14,6 +18,11 @@ lint:
 	@echo "\nLinting...\n"
 	flake8 --exclude=.tox
 
+
+flush: clean
+	@echo "\nRunning 2d...\n"
+	python src/controller.py --iterations 1 --epochs 1 --twod 
+
 test: clean
 	@echo \n"Testing...\n"
 	python src/ekf.py
@@ -21,4 +30,4 @@ test: clean
 
 run:
 	@echo "\nRunning...\n"
-	python src/lstm_ekf.py
+	python src/controller.py --iterations 100 --epochs 4

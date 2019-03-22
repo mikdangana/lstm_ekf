@@ -6,7 +6,7 @@ import os, re, sys, traceback
 import yaml, logging, logging.handlers
 from filterpy.kalman import ExtendedKalmanFilter
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, dot, divide, subtract
+from numpy import ones, dot, divide, subtract, concatenate
 from numpy.linalg import inv
 from functools import reduce
 from random import random, uniform
@@ -21,7 +21,7 @@ initialized = False
 def RNN(x, weights, biases):
 
     # 1-layer LSTM with n_hidden units.
-    cell = tf.nn.rnn_cell.LSTMCell(n_hidden)
+    cell = tf.nn.rnn_cell.LSTMCell(n_hidden, activation=tf.nn.relu)
     #rnn_cell.zero_state(1, dtype=tf.float32)
     logger.info("RNN.cell = " + str(cell))
 
@@ -56,7 +56,7 @@ def test_labels(model, X = None, labels = [], sample_size = 5):
                 def measure(msmt):
                     val = symbols[s](k+1) 
                     return (1 - uniform(0.0, noise)) * val
-                labels.append([0.0, repeat(list(map(measure, range(n_msmt))), n_entries), repeat(s, n_entries)])
+                labels.append([0.0, repeat(list(map(measure, range(n_msmt))), n_entries), repeat(repeat(s, n_lstm_out), n_entries)])
             logger.debug("test_labels done with symbol " + str(symbols[s]))
     logger.debug("test_labels.labels = " + str(labels))
     return labels
@@ -70,14 +70,21 @@ def tf_run(*args, **kwargs):
 
 
 # Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
-def tune_model(n_epochs = default_n_epochs, labelfn = test_labels):
+def tune_model(epochs = n_epochs, labelfn = test_labels):
+
+    tf.reset_default_graph()
 
     X = tf.placeholder("float", [n_entries, n_msmt])
-    Y = tf.placeholder("float", [n_entries, n_coeff])
+    Y = tf.placeholder("float", [n_entries, n_lstm_out])
 
     # RNN output node weights and biases
-    weights = {'out':tf.Variable(tf.ones([n_hidden,n_coeff]),name='w')}
-    biases = {'out': tf.Variable(tf.zeros([n_entries, n_coeff]), name='b')}
+    weights = {'out':tf.Variable(tf.ones([n_hidden, n_lstm_out]),name='w')}
+    if n_msmt == n_coeff / 3:
+        biases = {'out': tf.Variable(tf.ones([n_entries, n_lstm_out]), name='b')}
+    else:
+        i = identity(n_msmt).flatten()
+        bias = array([concatenate((i,i,i)) for x in range(n_entries)])
+        biases = {'out': tf.convert_to_tensor(bias, name='b', dtype=tf.float32)}
 
     model = RNN(X, weights, biases)
     logger.debug("model = " + str(model))
@@ -86,7 +93,7 @@ def tune_model(n_epochs = default_n_epochs, labelfn = test_labels):
 
     optimizer = tf.train.RMSPropOptimizer(learning_rate=learn_rate)
     train_op = optimizer.minimize(cost)
-    return train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn)
+    return train_and_test(model, X, Y, train_op, cost, epochs, labelfn)
 
 
 def lstm_initialized():
@@ -113,7 +120,7 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
             # Remember 'cost' contains the model
             _, total_cost = tf_run([train_op, cost], feed_dict =
                 {X: to_size(batch_x, n_msmt, n_entries), 
-                 Y: to_size(batch_y, n_coeff, n_entries)})
+                 Y: to_size(batch_y, n_lstm_out, n_entries)})
             logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
                str(shape(batch_y)) + ", cost = " + str(total_cost) + 
                ", batch " + str(i+1) + " of " + str(len(train_data)) + 
@@ -131,12 +138,12 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
 def test(model, X, Y, test_data):
     #pred = tf.nn.softmax(model)
     #correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(Y, 1))
-    labels = tf.reshape(Y, [n_coeff, n_entries])
-    preds = tf.reshape(model, [n_coeff, n_entries])
+    labels = tf.reshape(Y, [n_lstm_out, n_entries])
+    preds = tf.reshape(model, [n_lstm_out, n_entries])
     tf_mse = tf.losses.mean_squared_error(labels, preds)
     tf_cost = tf.reduce_mean(tf.square(model - Y))
     test_x = to_size(list(map(lambda t: t[0], test_data)), n_msmt, n_entries)
-    test_y = to_size(list(map(lambda t: t[1], test_data)), n_coeff, n_entries)
+    test_y = to_size(list(map(lambda t: t[1], test_data)), n_lstm_out, n_entries)
     logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + 
         ", X = " + str(X) + ", Y = " + str(Y))
     #tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)

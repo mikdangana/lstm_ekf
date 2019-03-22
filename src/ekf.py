@@ -22,54 +22,80 @@ def ekf_accuracy(ekf, msmt, indices=None, label=""):
 
 # Test the accuracies of an EKF per measurement metric
 def ekf_accuracies(ekf, msmt, indices=None, label=""):
-    ekf.predict()
+    ekfs = ekf if isinstance(ekf, list) else [ekf]
+    for ekf in ekfs:
+        ekf.predict()
     logger.info("state_ids = " + str(state_ids) + ", msmt = " + str(len(msmt)))
     (state, n_state) = ([msmt[i] for i in state_ids], len(state_ids))
     state = array(state)
     state.resize(n_state, 1)
+    [accuracies, mean, state_ns, prior] = ekf_mean(ekfs[0], indices, state)
+    max_mean = [mean, 0]
+    means = [mean]
+    for i in range(len(ekfs[1:])):
+        _, mean, _, _ = ekf_mean(ekfs[i+1], indices, state)
+        max_mean = [mean, i+1] if mean > max_mean[0] else max_mean
+        means.append(mean)
+    swap(ekfs, max_mean[1])
+    mean = max_mean[0]
     # accuracy is average of 1 - 'point-wise scaled delta'
-    accuracy = lambda pt: max(1 - abs((pt[1]-pt[0])/max(pt[0],1e-9)), 0)
-    nums = lambda ns : map(lambda n: n[0], ns)
-    accuracies = list(map(accuracy, zip(nums(state), nums(ekf.x_prior))))
-    mean = avg([accuracies[i] for i in indices] if indices else accuracies) 
-    logger.info(label + " x_prior = " + str(shape(ekf.x_prior)) + 
+    logger.info(label + " x_prior = " + str(shape(ekfs[0].x_prior)) + 
         ", zip(prior,state,accuracies) = " + 
-        str(list(zip(nums(ekf.x_prior), nums(state), accuracies))) + 
-        ", accuracy = " + str(mean))
-    return [[accuracies, list(nums(state))], mean]
+        str(list(zip(prior, state_ns, accuracies))) + 
+        ", means = " + str(means) + ", accuracy = " + str(mean))
+    return [[state_ns, accuracies], mean]
+
+
+def ekf_mean(ekf, indices, state):
+    nums = lambda ns : list(map(lambda n: n[0], ns))
+    accuracy = lambda pt: -abs(pt[1]-pt[0]) #max(1 - abs((pt[1]-pt[0])/max(pt[0],1e-1)), 0)
+    accuracies = list(map(accuracy, zip(nums(state), nums(ekf.x_prior), range(len(state)))))
+    mean = avg([accuracies[i] for i in indices] if indices else accuracies) 
+    return [accuracies, mean, nums(state), nums(ekf.x_prior)]
+
+
+def swap(lst, i):
+    tmp = lst[0]
+    lst[0] = lst[i]
+    lst[i] = tmp
+
+
+def read2d(coeffs, dimx, start, end):
+    vals = array(coeffs[start:end])
+    vals.resize(dimx, dimx)
+    return vals
 
 
 
 # Build and update an EKF using the provided measurement data
 def build_ekf(coeffs, z_data): 
-    dimx = n_msmt #int(math.sqrt(n_coeff - n_msmt*n_msmt))
+    dimx = n_msmt
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    if coeffs:
-        #q = symmetric(array(coeffs[0:dimx])) #array(coeffs[0:dimx*dimx])
-        q = array(coeffs[0:dimx*dimx])
-        q.resize(dimx, dimx) # TODO need to determine size
-        ekf.Q = q
-        #dg = array(coeffs[n_msmt*n_msmt:n_msmt*(n_msmt+1)])
-        #dg = array(coeffs[n_msmt:n_msmt*2])
-        #half = array(coeffs[n_msmt*(n_msmt+1):pow(n_msmt*(n_msmt+1), 2)])
-        f = array(coeffs[n_msmt*n_msmt:n_msmt*n_msmt*2])
-        f.resize(n_msmt, n_msmt) # TODO need to determine size
-        ekf.F = f #symmetric(dg)
-        #logger.info("ekf.F.dg=" + str(dg)+ ", coeffs.size=" + str(len(coeffs)))
-        #r = symmetric(array(coeffs[-n_msmt:]))
-        r = array(coeffs[-n_msmt*n_msmt:])
-        r = r.resize(n_msmt, n_msmt) # TODO need to determine size
+    if len(coeffs):
+        coeffs = array(coeffs).flatten()
+        if n_msmt == n_coeff / 3:
+            ekf.Q = symmetric(array(coeffs[0:dimx]))
+            ekf.F = symmetric(array(coeffs[n_msmt:n_msmt*2]))
+            r = symmetric(array(coeffs[-n_msmt:]))
+        else:
+            ekf.Q = read2d(coeffs, dimx, 0, dimx*dimx)
+            ekf.F = read2d(coeffs, dimx, n_msmt*n_msmt, n_msmt*n_msmt*2)
+            r = read2d(coeffs, dimx, -n_msmt*n_msmt, n_coeff)
+        logger.info("ekf.Q="+str(ekf.Q) + ", ekf.F = " + str(ekf.F) + ", r = " + str(r))
         return update_ekf(ekf, z_data, r)
     return update_ekf(ekf, z_data)
 
 
+
 def update_ekf(ekf, z_data, R = None):
+    ekfs = ekf if isinstance(ekf, list) else [ekf]
     hjacobian = lambda x: identity(len(x))
     hx = lambda x: x
     for z in z_data:
         z = array(z)
         z.resize(n_msmt, 1)
-        ekf.update(z, hjacobian, hx, R)
+        for ekf in ekfs:
+            ekf.update(z, hjacobian, hx, R)
     return ekf
 
 
