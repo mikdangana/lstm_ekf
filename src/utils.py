@@ -3,8 +3,8 @@ import yaml, logging, logging.handlers
 import pickle
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract, size, append, transpose
-from numpy import gradient, mean, std
-from numpy.linalg import inv
+from numpy import gradient, mean, std, outer, vstack, concatenate
+from numpy.linalg import inv, lstsq
 from scipy import stats
 from functools import reduce
 from random import random
@@ -121,6 +121,33 @@ def pickleload(filename):
     return []
 
 
+def find(lst, val):
+    ids = [i if v==val or not val else -1 for i,v in zip(range(len(lst)), lst)]
+    return list(filter(lambda v: v>=0, ids))
+
+
+# Approximates A for A*x = y
+def solve_linear(x, ys):
+    y_avg = array(list(map(sum, array(ys).T))).T / len(ys)
+    def project(x1): 
+        if len(shape(x1)) > 1 and shape(x1)[1]>1:
+            x1 = array(list(map(sum, x1.T))).T / len(x1) 
+        elif len(x1) < len(y_avg):
+            x1 = y_avg
+        logger.info("project.x1 = " + str(x1))
+        return x1
+    hx = project(x)
+    A = vstack([array(hx), ones(len(hx))]).T
+    logger.info("A= " + str(A) + ", y = " + str(ys) + ", y_avg = " + str(y_avg))
+    m, c = lstsq(A, y_avg, rcond=None)[0]
+    (m, c) = (1,0)
+    logger.info("solve_linear().m,c = " + str((m,c)))
+    return (m, c, project)
+
+
+def rotate_right(m):
+    return transpose(concatenate([transpose(m[:,1:]), transpose(m[:,0:1])]))
+
 
 def isconverged(data, confidence=0.95):
     return len(list(filter(lambda c: c>=confidence, convergence(data))))>0
@@ -173,3 +200,6 @@ if __name__ == "__main__":
     print(symmetric([1,2,3], [4,5,6]))
     print(symmetric([1,2,3]))
     print(symmetric([1,2,3,4], [5,6,7,8,9,10]))
+    (x, y) = (array([5,3,8]), array([15,4,23]))
+    (m, c, _) = solve_linear(x, [y])
+    print("x = " + str(x) + ", y = " + str(y) + ", sol = " + str(m*x+c))

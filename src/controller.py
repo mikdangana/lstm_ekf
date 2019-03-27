@@ -11,14 +11,19 @@ test_msmt = []
 dimz = int(n_msmt/2)
 msmts = []
 mcount = 0
-
+monitor_msmts = {}
+ekfs = {}
+default_host = None
 
 
 # Only the first n_msmt values are used, the rest are ignored by LSTM & EKF
-def measurements(simulated = True):
+def measurements(simulated = True, host = default_host):
     if simulated:
         return sim_measurements()
-    cmd = "top -b -n 1 | tail -121 | awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'" 
+    cmd = "top -b -n 1 | tail -121 | sort -n | " + \
+            " awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'" 
+    if host:
+        cmd = get_config("login-"+host) + " -t '" + cmd + "'"
     pstats = os_run(cmd).split()
     logger.info(str(len(pstats)) + " measurements retrieved")
     def normalize(v):
@@ -182,11 +187,43 @@ def track_accuracies(ekf, count, filename, label=""):
 
 
 
+def monitor():
+    for i in range(10):
+        for host in set(get_config("lqn-hosts")):
+            monitor_host(host)
+        sleep(1)
+    logger.info("Done")
+
+
+
+def monitor_host(host):
+    if not host in monitor_msmts:
+        monitor_msmts[host] = []
+        # Tune host ekf
+        default_host = host
+        lstm_model, X, lstm_accuracy = tune_model(n_epochs, bootstrap_labels)
+        os_run("tar cvf tune_pickles_" + host + ".tar *.pickle")
+        os_run("rm *.pickle")
+        history = list(map(lambda x : measurements(), range(10)))
+        monitor_msmts[host].extend(history)
+        coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
+        logger.info("coeffs = " + str(coeffs[-1]))
+        ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
+        logger.info("Tuning done for host: " + host)
+
+    monitor_msmts[host].append(measurements(True, host))
+    do_action(ekf_predict(ekfs[host]), monitor_msmts[host][-1], host)
+    ekf_accuracies(ekfs[host], monitor_msmts[host][-1], None, "", False, host)
+    #    nerrs.append(ekf_accuracies(ekf, msmts, range(dimz), label))
+    #    accuracies.append(nerrs[-1][-1])
+    #    update_ekf(ekf, [msmts])
+
+
+
 def tuned_accuracy():
     if n_iterations > 1:
         run_async("activity-cmd")
-    epochs = n_epochs
-    lstm_model, X, lstm_accuracy = tune_model(epochs, bootstrap_labels)
+    lstm_model, X, lstm_accuracy = tune_model(n_epochs, bootstrap_labels)
     history = list(map(lambda x : measurements(), range(10)))
     coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
     logger.info("coeffs = " + str(coeffs[-1]))

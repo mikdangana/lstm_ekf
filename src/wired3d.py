@@ -7,7 +7,7 @@ A very basic demonstration of a wireframe plot.
 '''
 
 from utils import *
-from mpl_toolkits.mplot3d import axes3d
+#from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
 
 
