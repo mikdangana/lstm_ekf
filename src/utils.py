@@ -127,16 +127,19 @@ def find(lst, val):
 
 
 # Approximates A for A*x = y
-def solve_linear(x, ys):
+def solve_linear(x, ys, m_c = None):
     y_avg = array(list(map(sum, array(ys).T))).T / len(ys)
     def project(x1): 
         if len(shape(x1)) > 1 and shape(x1)[1]>1:
             x1 = array(list(map(sum, x1.T))).T / len(x1) 
         elif len(x1) < len(y_avg):
             x1 = y_avg
-        logger.info("project.x1 = " + str(x1))
+        x1 = x1.reshape(len(x1), 1)
+        logger.info("project.x1 = " + str(x1) + ", shape = " + str(x1.shape))
         return x1
-    hx = project(x)
+    if m_c:
+        return (m_c[0], m_c[1], project)
+    hx = project(x).T[0]
     A = vstack([array(hx), ones(len(hx))]).T
     logger.info("A= " + str(A) + ", y = " + str(ys) + ", y_avg = " + str(y_avg))
     m, c = lstsq(A, y_avg, rcond=None)[0]

@@ -40,26 +40,32 @@ def ekf_accuracies(ekf, msmt, indices=None, label="", predict=True, host=None):
     swap(ekfs, max_mean[1])
     mean = max_mean[0]
     # accuracy is average of 1 - 'point-wise scaled delta'
-    logger.info(label + " x_prior = " + str(shape(ekfs[0].x_prior)) + 
+    logger.info(label + " x_prior = " + str(shape(get_ekf(ekfs).x_prior)) + 
         ", zip(prior,state,accuracies) = " + 
         str(list(zip(prior, state_ns, accuracies))) + 
         ", means = " + str(means) + ", accuracy = " + str(mean))
     return [[state_ns, accuracies], mean]
 
 
-
 def ekf_predict(ekf):
     ekfs = ekf if isinstance(ekf, list) else [ekf]
     for ekf in ekfs:
-        ekf.predict()
+        get_ekf(ekf).predict()
+
+
+def get_ekf(ekf):
+    ekf = ekf[0] if isinstance(ekf, list) else ekf
+    return ekf['ekf'] if not isinstance(ekf, ExtendedKalmanFilter) else ekf
 
 
 def ekf_mean(ekf, indices, state):
-    nums = lambda ns : list(map(lambda n: n[0], ns))
+    (ekf, (m, c)) = (ekf['ekf'], ekf['mc']) if 'ekf' in ekf else (ekf, (1, 0))
+    nums = lambda ns : array(list(map(lambda n: n[0], ns)))
+    prior = lambda kf: m * nums(get_ekf(kf).x_prior) + c
     accuracy = lambda pt: -abs(pt[1]-pt[0]) #max(1 - abs((pt[1]-pt[0])/max(pt[0],1e-1)), 0)
-    accuracies = list(map(accuracy, zip(nums(state), nums(ekf.x_prior), range(len(state)))))
+    accuracies = list(map(accuracy, zip(nums(state), prior(ekf), range(len(state)))))
     mean = avg([accuracies[i] for i in indices] if indices else accuracies) 
-    return [accuracies, mean, nums(state), nums(ekf.x_prior)]
+    return [accuracies, mean, nums(state), prior(ekf)]
 
 
 def swap(lst, i):
@@ -76,7 +82,7 @@ def read2d(coeffs, width, start, end):
 
 
 # Build and update an EKF using the provided measurement data
-def build_ekf(coeffs, z_data): 
+def build_ekf(coeffs, z_data, linear_consts=None): 
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
     if len(coeffs):
         coeffs = array(coeffs).flatten()
@@ -89,26 +95,27 @@ def build_ekf(coeffs, z_data):
             ekf.F = read2d(coeffs, dimx, dimx*dimx, dimx*dimx*2)
             r = read2d(coeffs, n_msmt, -n_msmt*n_msmt, n_coeff)
         logger.info("ekf.Q="+str(ekf.Q) + ", ekf.F = " + str(ekf.F) + ", r = " + str(r))
-        return update_ekf(ekf, z_data, r)
+        return update_ekf(ekf, z_data, r, linear_consts)
     return update_ekf(ekf, z_data)
 
 
 
-def update_ekf(ekf, z_data, R = None):
+def update_ekf(ekf, z_data, R = None, m_c = None):
     ekfs = ekf if isinstance(ekf, list) else [ekf]
     for i,z in zip(range(len(z_data)), z_data):
         z = array(z)
         z.resize(n_msmt, 1)
         def h(x):
-            (m, c, project) = solve_linear(x, [z_data[i]])
+            (m, c, project) = solve_linear(x, z_data[0:i+1], m_c)
             return m * project(x) + c
         def hjacobian(x):
             xs = array(list(map(lambda i: x + 1e-5*random(), range(len(x)))))
-            zs = array(list(map(lambda xi: h(xi), xs)))
+            zs = array(list(map(lambda xi: h(xi).T[0], xs)))
             logger.info("Hj = " + str(zs.T))
             return zs.T
         for ekf in ekfs:
             ekf.update(z, hjacobian, h, R)
+            logger.info("ekf.K = " + str(ekf.K) + ", ekf.y.shape = " + str(ekf.y.shape) + ", ekf.y = " + str(ekf.y) + ", K.Y = " + str(dot(ekf.K, ekf.y)) + ", ekf.S = " + str(ekf.S) + ", ekf.PHT = " + str(dot(ekf.P, hjacobian(ekf.x).T)) + ", ekf.x.shape = " + str(ekf.x.shape) + ", ekf.x = " + str(ekf.x) + ", ekf.z = " + str(ekf.z))
     return ekf
 
 
@@ -130,8 +137,10 @@ def plot_ekf():
 
 # Testbed to unit test EKF using hand-crafted data
 def test_ekf():
+    m_cs = [(5,0), (1,0), (1,0), (2,0)]
     fns = [lambda x: 0 if x<50 else 1, math.exp, math.sin, math.erf]
-    fns = [lambda x: 0 if x<50 else 1]
+    fns = [lambda x: 1 if x<50 else 0 for i in range(1)]
+    m_cs = [(0.5, 0.5), (0.5, 0), (1,0), (2,0), (5,0), (10,0)]
     coeffs = test_coeffs()
     logger.info("coeffs = " + str(len(coeffs)) + 
         ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
@@ -139,11 +148,11 @@ def test_ekf():
     for n in range(len(fns)):
         (train, test) = test_zdata(fns, n)
         logger.info("train=" + str(len(train)) + ", train[2]=" + str(train[2]))
-        ekf = build_ekf(coeffs, train)
+        ekf = build_ekf(coeffs, train, m_cs[n])
         logger.info("test=" + str(len(test)) + ", test[0]=" + str(test[0]) + 
             ", fn = " + str(n) + " of " + str(len(fns)))
-        means = list(map(lambda t: ekf_accuracy(ekf, t), test))
-        accuracies.append(avg(means)) 
+        ekf = {"ekf":ekf, "mc":m_cs[n]}
+        accuracies.append(avg(list(map(lambda t: ekf_accuracy(ekf, t), test)))) 
         logger.info("accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) +
             " of " + str(len(fns)))
         predictions = ekf_track(coeffs, concatenate([train, test]))
@@ -158,6 +167,7 @@ def test_coeffs():
     else:
         return flatlist(identity(dimx)) + flatlist(identity(dimx)) + \
                flatlist(identity(n_msmt))
+
 
 def test_zdata(fns, n):
     z_data = []
