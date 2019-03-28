@@ -28,6 +28,14 @@ test: clean
 	python src/ekf.py
 	python src/lstm.py
 
+testekf: clean
+	@echo \n"Testing ekf.py...\n"
+	python src/ekf.py
+
+testlstm: clean
+	@echo \n"Testing lstm.py...\n"
+	python src/lstm.py
+
 run:
 	@echo "\nRunning...\n"
 	python src/controller.py --iterations 100 --epochs 4

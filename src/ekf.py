@@ -138,24 +138,18 @@ def plot_ekf():
 
 # Testbed to unit test EKF using hand-crafted data
 def test_ekf():
-    m_cs = [(5,0), (1,0), (1,0), (2,0)]
-    fns = [lambda x: 0 if x<50 else 1, math.exp, math.sin, math.erf]
-    fns = [lambda x: 1 if x<50 else 0 for i in range(10)]
-    m_cs = [(i,0) for i in range(10)]
-    #m_cs = [(1.0, 0.0) for i in range(len(fns))]
-    coeffs = test_coeffs()
-    logger.info("coeffs = " + str(len(coeffs)) + 
-        ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
-    accuracies = [] 
+    fns = [lambda x: 0 if x<50 else 1, math.exp, lambda x: math.sin((x-10)/100), math.erf]
+    fns = [lambda x: math.sin((x-10)/100)]
+    #fns = [lambda x: 1 if x<50 else 0 for i in range(len(fns))]
+    m_cs = [(1.0, 0.0) for i in range(len(fns))]
+    (coeffs, accuracies) = (test_coeffs(), [])
     for n in range(len(fns)):
         (train, test) = test_zdata(fns, n)
-        logger.info("train=" + str(len(train)) + ", train[2]=" + str(train[2]))
-        ekf, _ = build_ekf(coeffs, train, m_cs[n])
-        logger.info("test=" + str(len(test)) + ", test[0]=" + str(test[0]) + 
-            ", fn = " + str(n) + " of " + str(len(fns)))
+        ekf, _ = build_ekf(coeffs, train)
         ekf = {"ekf":ekf, "mc":m_cs[n]}
         accuracies.append(avg(list(map(lambda t: ekf_accuracy(ekf, t), test)))) 
-        logger.info("accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) +
+        logger.info("train=" + str(len(train)) + ", test = " + str(len(test)) + 
+            ", accuracy = " + str(accuracies[-1]) + ", fn = " + str(n) + 
             " of " + str(len(fns)))
         predictions = ekf_track(coeffs, concatenate([train, test]))
         pickledump("predictions" + str(n) + ".pickle", predictions)
@@ -172,7 +166,7 @@ def test_coeffs():
 
 def test_zdata(fns, n):
     z_data = []
-    for v in (array(range(300))/30 if n==1 else range(100)):
+    for v in (array(range(300))/30 if n==1 else range(5000)):
         msmt = map(lambda m: fns[n](v) if m<=n else random(), range(n_msmt))
         z_data.append(list(msmt))
     split = int(0.75 * len(z_data))
