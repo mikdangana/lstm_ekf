@@ -11,6 +11,7 @@ from numpy import ones, dot, divide, subtract
 from numpy.linalg import inv
 from functools import reduce
 from random import random
+from datetime import *
 
 
 logger = logging.getLogger("Kalman_Filter")
@@ -84,6 +85,7 @@ def read2d(coeffs, width, start, end):
 # Build and update an EKF using the provided measurement data
 def build_ekf(coeffs, z_data, linear_consts=None): 
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
+    ekf.__init__(dimx, n_msmt)
     if len(coeffs):
         coeffs = array(coeffs).flatten()
         if n_coeff == dimx * 2 + n_msmt:
@@ -100,8 +102,9 @@ def build_ekf(coeffs, z_data, linear_consts=None):
 
 
 
-def update_ekf(ekf, z_data, R = None, m_c = None):
-    ekfs = ekf if isinstance(ekf, list) else [ekf]
+def update_ekf(ekf, z_data, R, m_c = None):
+    (ekfs, start) = (ekf if isinstance(ekf, list) else [ekf], datetime.now())
+    priors = [[] for i in ekfs]
     for i,z in zip(range(len(z_data)), z_data):
         z = array(z)
         z.resize(n_msmt, 1)
@@ -113,19 +116,17 @@ def update_ekf(ekf, z_data, R = None, m_c = None):
             zs = array(list(map(lambda xi: h(xi).T[0], xs)))
             logger.info("Hj = " + str(zs.T))
             return zs.T
-        for ekf in ekfs:
+        for j,ekf in zip(range(len(ekfs)), ekfs):
+            ekf.predict()
+            priors[j].append(ekf.x_prior)
             ekf.update(z, hjacobian, h, R)
-            logger.info("ekf.K = " + str(ekf.K) + ", ekf.y.shape = " + str(ekf.y.shape) + ", ekf.y = " + str(ekf.y) + ", K.Y = " + str(dot(ekf.K, ekf.y)) + ", ekf.S = " + str(ekf.S) + ", ekf.PHT = " + str(dot(ekf.P, hjacobian(ekf.x).T)) + ", ekf.x.shape = " + str(ekf.x.shape) + ", ekf.x = " + str(ekf.x) + ", ekf.z = " + str(ekf.z))
-    return ekf
+            logger.info("ekf.K = " + str(ekf.K) + ", ekf.y.shape = " + str(ekf.y.shape) + ", ekf.y = " + str(ekf.y) + ", K.Y = " + str(dot(ekf.K, ekf.y)) + ", ekf.S = " + str(ekf.S) + ", ekf.PHT = " + str(dot(ekf.P, hjacobian(ekf.x).T)) + ", ekf.x.shape = " + str(ekf.x.shape) + ", ekf.x = " + str(ekf.x) + ", ekf.z = " + str(ekf.z) + ", duration = " + str(datetime.now() - start))
+    return (ekf, priors)
 
 
 def ekf_track(coeffs, z_data):
-    points = []
-    for i in range(len(z_data)):
-        ekf = build_ekf(coeffs, z_data[0 : i])
-        ekf.predict()
-        points.append(ekf.x_prior)
-    return list(zip(z_data, points))
+    ekf, points = build_ekf(coeffs, z_data)
+    return list(zip(z_data, points[0]))
 
 
 def plot_ekf():
@@ -139,8 +140,9 @@ def plot_ekf():
 def test_ekf():
     m_cs = [(5,0), (1,0), (1,0), (2,0)]
     fns = [lambda x: 0 if x<50 else 1, math.exp, math.sin, math.erf]
-    fns = [lambda x: 1 if x<50 else 0 for i in range(1)]
-    m_cs = [(0.5, 0.5), (0.5, 0), (1,0), (2,0), (5,0), (10,0)]
+    fns = [lambda x: 1 if x<50 else 0 for i in range(10)]
+    m_cs = [(i,0) for i in range(10)]
+    #m_cs = [(1.0, 0.0) for i in range(len(fns))]
     coeffs = test_coeffs()
     logger.info("coeffs = " + str(len(coeffs)) + 
         ", size = " + str(size(coeffs)) + ", n_coeff = " + str(n_coeff))
@@ -148,7 +150,7 @@ def test_ekf():
     for n in range(len(fns)):
         (train, test) = test_zdata(fns, n)
         logger.info("train=" + str(len(train)) + ", train[2]=" + str(train[2]))
-        ekf = build_ekf(coeffs, train, m_cs[n])
+        ekf, _ = build_ekf(coeffs, train, m_cs[n])
         logger.info("test=" + str(len(test)) + ", test[0]=" + str(test[0]) + 
             ", fn = " + str(n) + " of " + str(len(fns)))
         ekf = {"ekf":ekf, "mc":m_cs[n]}
@@ -158,7 +160,6 @@ def test_ekf():
         predictions = ekf_track(coeffs, concatenate([train, test]))
         pickledump("predictions" + str(n) + ".pickle", predictions)
     logger.info("accuracies = " + str(accuracies))
-    return
 
 
 def test_coeffs():
