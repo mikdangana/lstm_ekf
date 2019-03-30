@@ -13,6 +13,7 @@ clean:
 	@echo "\nCleaning...\n"
 	rm --force --recursive *.pickle
 	rm --force --recursive *.log
+	rm --force --recursive *.tar
 
 lint:
 	@echo "\nLinting...\n"
@@ -23,19 +24,20 @@ flush: clean
 	@echo "\nRunning 2d...\n"
 	python src/controller.py --iterations 1 --epochs 1 --twod 
 
-test: clean
-	@echo \n"Testing...\n"
-	python src/ekf.py
-	python src/lstm.py
+test: clean testekf testlstm testctl
 
 testekf: clean
-	@echo \n"Testing ekf.py...\n"
+	@echo "\nTesting EKF Unit...\n"
 	python src/ekf.py
 
 testlstm: clean
-	@echo \n"Testing lstm.py...\n"
+	@echo "\nTesting LSTM Unit...\n"
 	python src/lstm.py
 
+testctl:
+	@echo "\nTesting Control Unit...\n"
+	python src/controller.py --iterations 10 --epochs 2 --test
+
 run:
-	@echo "\nRunning...\n"
-	python src/controller.py --iterations 100 --epochs 4
+	@echo "\nRunning Controller...\n"
+	python src/controller.py --iterations 10 --epochs 2

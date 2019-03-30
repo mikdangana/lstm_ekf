@@ -4,15 +4,15 @@ variables:
         - 127.0.0.1
     cassandra-host: 
         - 127.0.0.1
-    application-host: 54.148.194.162
-    db-host: 34.220.34.10
-    search-host: 52.33.201.173
+    application-host: 127.0.0.1
+    db-host: 127.0.0.1
+    search-host: 127.0.0.1
     lqn-model: '/home/ubuntu/woodside/lstm_ekf/testbed.lqn'
     solr-url: 'https://127.0.0.1:8983/solr'
     cassandra-home: '/home/ubuntu/woodside/apache-cassandra-3.11.2'
 
 provision-cmds: 
-    solr: "/<solr-url>/solr/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/"
+    solr: "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
     db: 
         - "sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' \"<cassandra-home>/conf/cassandra.yaml\""
         - "<cassandra-home>/bin/stop"
@@ -20,7 +20,7 @@ provision-cmds:
         # Figure out how to use JMX rather than cassandra stop/start
 
 deprovision-cmds: 
-    solr-rem-node: "<solr-url>/solr/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>"
+    solr-rem-node: "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
     db-rem-node: 
         - "sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' \"<cassandra-home>/conf/cassandra.yaml\""
         - "<cassandra-home>/bin/stop"
@@ -54,7 +54,7 @@ lqn-thresholds:
         - 0.9
         - 0.9
         - 0.9
-        - 0.9
+        - 0.00001
 
 lqn-hosts:
         - "<application-host>"
@@ -66,7 +66,7 @@ lqn-hosts:
 
 
 lqn-provision-actions:
-        - "/<solr-url>/solr/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/"
+        - "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
         -
             - "sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' \"<cassandra-home>/conf/cassandra.yaml\""
             - "<cassandra-home>/bin/stop"
@@ -75,10 +75,11 @@ lqn-provision-actions:
         - "curl http://<application-host>:8878/setdboptions?readtimeoutms=500000"
         - "curl http://<application-host>:8878/setdboptions?connsperhost=10000"
         - "curl http://<application-host>:8878/setdboptions?maxinflightqueries=10000"
+        - "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
 
 
 lqn-deprovision-actions:
-        - "<solr-url>/solr/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>"
+        - "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
         -
             - "sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' \"<cassandra-home>/conf/cassandra.yaml\""
             - "<cassandra-home>/bin/stop"
@@ -87,6 +88,7 @@ lqn-deprovision-actions:
         - "curl http://<application-host>:8878/setdboptions?readtimeoutms=1000"
         - "curl http://<application-host>:8878/setdboptions?connsperhost=10"
         - "curl http://<application-host>:8878/setdboptions?maxinflightqueries=10"
+        - "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
 
 
 model-update-cmd: "sed -i 's/<param0>\\s*=\\s*\\[?[0-9,]\\]?*/<param0> = <param1>/' <lqn-model>"
