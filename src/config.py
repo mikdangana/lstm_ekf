@@ -37,15 +37,16 @@ logger = logging.getLogger("Config")
 
 def do_action(x_prior, host=None):
     global tasks
-    x_prior = [n[0] for n in x_prior[-1][-1]]
+    lqn = as_lqn_output([n[0] for n in x_prior[-1][-1]])
     ids = find(get_config("lqn-hosts"), host)
     thresholds = [float(t) for t in sublist(get_config("lqn-thresholds"), ids)]
     tasks = get_config('lqn-tasks') if not len(tasks) else tasks
-    logger.info("x_prior = " + str(x_prior) + ", thresholds=" + str(thresholds))
+    logger.info("prediction = " + str(lqn) + ", thresholds=" + str(thresholds))
+
     for i,threshold in zip(range(len(thresholds)), thresholds):
         name = [k for k,v in tasks[i].items()][0]
-        logger.info("prior.ids,val,ts ="+str((ids,x_prior[i+ids[0]],threshold)))
-        if (i in ids) and (x_prior[i + ids[0]] >= threshold): 
+        logger.info("prior.ids,val,ts ="+str((ids, lqn[i+ids[0]],threshold)))
+        if (i in ids) and (lqn[i + ids[0]] >= threshold): 
             res_info = solve_lqn(i + ids[0])
             for j,res in zip(range(len(tasks)), res_info[0:len(tasks)]):
                 resname = [k for k,v in tasks[j].items()][0]
@@ -75,6 +76,14 @@ def solve_lqn(metric_id):
     best = reduce(low, rows)
     logger.info("rows = " + str(rows))
     return [float(r) for r in best]
+
+
+
+def as_lqn_output(msmts):
+    state = load_state()
+    model = state['lqn-ekf-model'] if 'lqn-ekf-model' in state else None
+    (m, c) = (model['m'], model['c']) if model else (1, 0)
+    return m * array(msmts) + c
 
 
 def run_actions(cmds, pos):
@@ -141,19 +150,24 @@ def get_config(path, params = []):
     if 'variables' in config:
         for k, v in config['variables'].items():
             k = "<" + str(k) + ">"
-            logger.debug("k,v,val,list=" + str((k,v,val,isinstance(val,list))))
-            if isinstance(v, type("")) and k in str(val):
-                if isinstance(val, list):
-                    val = [re.sub(r'' + k, v, str(vali)) for vali in val]
-                else:
-                    val = re.sub(r'' + k, v, str(val))
-            elif isinstance(v, list) and val:
-                if isinstance(val, type("")) and k in val:
-                    for vi in v:
-                        val = re.sub(r'' + k, vi, str(val))
-                elif isinstance(val, list) and (k in str(val)):
-                    for vi in v:
-                        val = [re.sub(r'' + k, vi, str(s)) for s in val]
+            val = set_variable(val, k, v)
+    return val
+
+
+def set_variable(val, k, v):
+    logger.debug("k,v,val,list=" + str((k,v,val,isinstance(val,list))))
+    if isinstance(v, type("")) and k in str(val):
+        if isinstance(val, list):
+            val = [set_variable(vali, k, v) for vali in val]
+        else:
+            val = re.sub(r'' + k, v, str(val))
+    elif isinstance(v, list) and val:
+        if isinstance(val, type("")) and k in val:
+            for vi in v:
+                val = re.sub(r'' + k, vi, str(val))
+        elif isinstance(val, list) and (k in str(val)):
+            for vi in v:
+                val = [set_variable(vali, k, v) for vali in val]
     return val
 
 

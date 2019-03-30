@@ -205,6 +205,9 @@ def create_monitor(host):
     def monitor_loop():
         for sample in range(1):
             monitor_host(host)
+            sleep(1)
+        os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
+        os_run("rm " + host + "*.pickle")
         logger.info("Monitor done on host " + host)
     return monitor_loop
 
@@ -222,14 +225,14 @@ def monitor_host(host):
         coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
         logger.info("coeffs = " + str(coeffs[-1]))
         ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
+        lqn_vals = solve_lqn(0)
+        m, c, _ = solve_linear(lqn_vals, monitor_msmts[host])
+        merge_state({"lqn-ekf-model": {"m": float(m), "c": float(c)}})
         logger.info("Tuning done for host: " + host)
 
     do_action(update_ekf(ekfs[host], [monitor_msmts[host][-1]])[1], host)
     monitor_msmts[host].append(measurements(True, host+"_"))
     ekf_accuracies(ekfs[host], monitor_msmts[host][-1], None, "", False, host)
-    os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
-    os_run("rm " + host + "*.pickle")
-    sleep(1)
 
 
 

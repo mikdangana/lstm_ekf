@@ -24,8 +24,13 @@ procs = []
 def os_run(cmd):
 
     res = None
+    if isinstance(cmd, list):
+        for c in cmd:
+           res = res + os_run(c) + "\n"
+        return res
+
     try:
-        logger.debug("Running cmd " + str(cmd))
+        logger.debug("Running cmd " + str(cmd) + ", inst = " + str((isinstance(cmd, list), isinstance(cmd, type("")))))
         res = os.popen(cmd + " 2>>lstm_ekf.log").read()
         logger.debug("Ran cmd,out = " + str((cmd, len(res))))
     except:
@@ -72,6 +77,13 @@ def save_state(runtime_state):
             return False
     return True
 
+
+def merge_state(delta):
+    state = load_state() or {}
+    logger.info("state, delta = " + str((state, delta)))
+    state.update(delta)
+    save_state(state)
+    return state
 
 
 def repeat(v, n):
@@ -137,7 +149,7 @@ def solve_linear(x, ys, m_c = None):
         if len(shape(x1)) > 1 and shape(x1)[1]>1:
             x1 = array(list(map(sum, x1.T))).T / len(x1) 
         elif len(x1) < len(y_avg):
-            x1 = y_avg
+            x1 = concatenate((array(x1), ones(len(y_avg) - len(x1))))
         x1 = x1.reshape(len(x1), 1)
         logger.debug("project.x1 = " + str(x1) + ", shape = " + str(x1.shape))
         return x1
@@ -147,7 +159,7 @@ def solve_linear(x, ys, m_c = None):
     A = vstack([array(hx), ones(len(hx))]).T
     logger.debug("A=" + str(A) + ", y=" + str(ys) + ", y_avg = " + str(y_avg))
     m, c = lstsq(A, y_avg, rcond=None)[0]
-    #logger.trace("solve_linear().m,c = " + str((m,c)))
+    logger.debug("m,c = " + str((m,c)))
     return (m, c, project)
 
 
@@ -211,3 +223,4 @@ if __name__ == "__main__":
     print("x = " + str(x) + ", y = " + str(y) + ", sol = " + str(m*x+c))
     print(os_run("wine lqns testbed.lqn"))
     print(sublist([1,2,3,4,5], [1,3]))
+    print(merge_state({"abc": {"def": 1, "ghi": 2}}))
