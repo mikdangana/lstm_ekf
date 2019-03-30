@@ -27,15 +27,15 @@ def ekf_accuracies(ekf, msmt, indices=None, label="", predict=True, host=None):
     ekfs = ekf if isinstance(ekf, list) else [ekf]
     _ = ekf_predict(ekf) if predict else None
     ids = cfg.find(get_config("lqn-hosts"), host)
-    state = list(map(lambda t: list(t.values())[0], tasks[ids[0]:ids[-1]+1]))
+    state = [list(t.values())[0] for t in tasks[ids[0]:ids[-1]+1]]
     (state, n_state) = (array(state), len(ids))
     logger.info("state = " + str(state) + ", msmt = " + str(len(msmt)))
-    state.resize(n_state, 1)
-    [accuracies, mean, state_ns, prior] = ekf_mean(ekfs[0], indices, state)
+    #state.resize(n_state, 1)
+    [accuracies, mean, state_ns, prior] = ekf_mean(ekfs[0], indices, msmt)
     max_mean = [mean, 0]
     means = [mean]
     for i in range(len(ekfs[1:])):
-        _, mean, _, _ = ekf_mean(ekfs[i+1], indices, state)
+        _, mean, _, _ = ekf_mean(ekfs[i+1], indices, msmt)
         max_mean = [mean, i+1] if mean > max_mean[0] else max_mean
         means.append(mean)
     swap(ekfs, max_mean[1])
@@ -52,21 +52,25 @@ def ekf_predict(ekf):
     ekfs = ekf if isinstance(ekf, list) else [ekf]
     for ekf in ekfs:
         get_ekf(ekf).predict()
+    return get_ekf(ekf).x_prior
 
 
 def get_ekf(ekf):
-    ekf = ekf[0] if isinstance(ekf, list) else ekf
-    return ekf['ekf'] if not isinstance(ekf, ExtendedKalmanFilter) else ekf
+    while isinstance(ekf, list) or isinstance(ekf, tuple):
+        ekf = ekf[0]
+    return ekf if isinstance(ekf, ExtendedKalmanFilter) else ekf['ekf']
 
 
 def ekf_mean(ekf, indices, state):
-    (ekf, (m, c)) = (ekf['ekf'], ekf['mc']) if 'ekf' in ekf else (ekf, (1, 0))
-    nums = lambda ns : array(list(map(lambda n: n[0], ns)))
-    prior = lambda kf: m * nums(get_ekf(kf).x_prior) + c
-    accuracy = lambda pt: -abs(pt[1]-pt[0]) #max(1 - abs((pt[1]-pt[0])/max(pt[0],1e-1)), 0)
-    accuracies = list(map(accuracy, zip(nums(state), prior(ekf), range(len(state)))))
+    (ekf,(m,c)) =(ekf['ekf'],ekf['mc']) if isinstance(ekf,dict) else (ekf,(1,0))
+    nums = lambda ns : [n[0] for n in ns]
+    prior = lambda kf: nums(m * get_ekf(kf).x_prior + c)
+    acc = lambda pt: -abs(pt[1]-pt[0])
+    accuracies = [acc(p) for p in zip(state,prior(ekf),range(len(state)))]
+    logger.info("accuracies = " + str(accuracies) + \
+        ", state = " + str(state) + ", prior = " + str(prior(ekf)))
     mean = avg([accuracies[i] for i in indices] if indices else accuracies) 
-    return [accuracies, mean, nums(state), prior(ekf)]
+    return [accuracies, mean, state, prior(ekf)]
 
 
 def swap(lst, i):
@@ -85,7 +89,7 @@ def read2d(coeffs, width, start, end):
 # Build and update an EKF using the provided measurement data
 def build_ekf(coeffs, z_data, linear_consts=None): 
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    ekf.__init__(dimx, n_msmt)
+    #ekf.__init__(dimx, n_msmt)
     if len(coeffs):
         coeffs = array(coeffs).flatten()
         if n_coeff == dimx * 2 + n_msmt:
@@ -102,25 +106,21 @@ def build_ekf(coeffs, z_data, linear_consts=None):
 
 
 
-def update_ekf(ekf, z_data, R, m_c = None):
+def update_ekf(ekf, z_data, R=None, m_c = None):
     (ekfs, start) = (ekf if isinstance(ekf, list) else [ekf], datetime.now())
     priors = [[] for i in ekfs]
     for i,z in zip(range(len(z_data)), z_data):
         z = array(z)
         z.resize(n_msmt, 1)
-        def h(x):
-            (m, c, project) = solve_linear(x, z_data[0:i+1], m_c)
-            return m * project(x) + c
+        h = lambda x: m_c[0]*x if m_c else x
         def hjacobian(x):
-            xs = array(list(map(lambda i: x + 1e-5*random(), range(len(x)))))
-            zs = array(list(map(lambda xi: h(xi).T[0], xs)))
-            logger.info("Hj = " + str(zs.T))
-            return zs.T
+            m = m_c[0] if m_c else 1
+            return m * identity(len(x)) 
         for j,ekf in zip(range(len(ekfs)), ekfs):
+            ekf = get_ekf(ekf)
             ekf.predict()
             priors[j].append(ekf.x_prior)
-            ekf.update(z, hjacobian, h, R)
-            logger.info("ekf.K = " + str(ekf.K) + ", ekf.y.shape = " + str(ekf.y.shape) + ", ekf.y = " + str(ekf.y) + ", K.Y = " + str(dot(ekf.K, ekf.y)) + ", ekf.S = " + str(ekf.S) + ", ekf.PHT = " + str(dot(ekf.P, hjacobian(ekf.x).T)) + ", ekf.x.shape = " + str(ekf.x.shape) + ", ekf.x = " + str(ekf.x) + ", ekf.z = " + str(ekf.z) + ", duration = " + str(datetime.now() - start))
+            ekf.update(z, hjacobian, h, R if len(shape(R)) else ekf.R)
     return (ekf, priors)
 
 
@@ -138,14 +138,13 @@ def plot_ekf():
 
 # Testbed to unit test EKF using hand-crafted data
 def test_ekf():
-    fns = [lambda x: 0 if x<50 else 1, math.exp, lambda x: math.sin((x-10)/100), math.erf]
-    fns = [lambda x: math.sin((x-10)/100)]
+    fns = [lambda x: 0 if x<50 else 1, math.exp, lambda x: math.sin((x-10)/10) + random(), math.erf]
     #fns = [lambda x: 1 if x<50 else 0 for i in range(len(fns))]
-    m_cs = [(1.0, 0.0) for i in range(len(fns))]
+    m_cs = [(10.0, 0.0) for i in range(len(fns))]
     (coeffs, accuracies) = (test_coeffs(), [])
     for n in range(len(fns)):
         (train, test) = test_zdata(fns, n)
-        ekf, _ = build_ekf(coeffs, train)
+        ekf, _ = build_ekf(coeffs, train, m_cs[n])
         ekf = {"ekf":ekf, "mc":m_cs[n]}
         accuracies.append(avg(list(map(lambda t: ekf_accuracy(ekf, t), test)))) 
         logger.info("train=" + str(len(train)) + ", test = " + str(len(test)) + 
@@ -158,15 +157,15 @@ def test_ekf():
 
 def test_coeffs():
     if n_coeff == dimx * 2 + n_msmt:
-        return ones(dimx * 2 + n_msmt)
+        return concatenate([ones(dimx), ones(dimx), ones(n_msmt)])
     else:
-        return flatlist(identity(dimx)) + flatlist(identity(dimx)) + \
-               flatlist(identity(n_msmt))
+        return flatlist(ones((dimx,dimx))) + flatlist(identity(dimx)) + \
+               flatlist(ones((n_msmt,n_msmt)))
 
 
 def test_zdata(fns, n):
     z_data = []
-    for v in (array(range(300))/30 if n==1 else range(5000)):
+    for v in (array(range(300))/30 if n==1 else range(100)):
         msmt = map(lambda m: fns[n](v) if m<=n else random(), range(n_msmt))
         z_data.append(list(msmt))
     split = int(0.75 * len(z_data))

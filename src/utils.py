@@ -1,6 +1,6 @@
 import os, re, sys, traceback
 import yaml, logging, logging.handlers
-import pickle
+import pickle, subprocess
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract, size, append, transpose
 from numpy import gradient, mean, std, outer, vstack, concatenate
@@ -26,8 +26,8 @@ def os_run(cmd):
     res = None
     try:
         logger.debug("Running cmd " + str(cmd))
-        res = os.popen(cmd).read()
-        logger.debug("Ran cmd = " + cmd + ", output = " + str(len(res)))
+        res = os.popen(cmd + " 2>>lstm_ekf.log").read()
+        logger.debug("Ran cmd,out = " + str((cmd, len(res))))
     except:
         ex = traceback.format_exc()
         logger.error("Error running '"+ str(cmd) +"': " + str(ex))
@@ -126,6 +126,10 @@ def find(lst, val):
     return list(filter(lambda v: v>=0, ids))
 
 
+def sublist(lst, ids):
+    return [v for i,v in filter(lambda v:v[0] in ids, zip(range(len(lst)),lst))]
+
+
 # Approximates A for A*x = y
 def solve_linear(x, ys, m_c = None):
     y_avg = array(list(map(sum, array(ys).T))).T / len(ys)
@@ -135,16 +139,15 @@ def solve_linear(x, ys, m_c = None):
         elif len(x1) < len(y_avg):
             x1 = y_avg
         x1 = x1.reshape(len(x1), 1)
-        logger.info("project.x1 = " + str(x1) + ", shape = " + str(x1.shape))
+        logger.debug("project.x1 = " + str(x1) + ", shape = " + str(x1.shape))
         return x1
     if m_c:
         return (m_c[0], m_c[1], project)
     hx = project(x).T[0]
     A = vstack([array(hx), ones(len(hx))]).T
-    logger.info("A= " + str(A) + ", y = " + str(ys) + ", y_avg = " + str(y_avg))
+    logger.debug("A=" + str(A) + ", y=" + str(ys) + ", y_avg = " + str(y_avg))
     m, c = lstsq(A, y_avg, rcond=None)[0]
-    (m, c) = (1,0)
-    logger.info("solve_linear().m,c = " + str((m,c)))
+    #logger.trace("solve_linear().m,c = " + str((m,c)))
     return (m, c, project)
 
 
@@ -206,3 +209,5 @@ if __name__ == "__main__":
     (x, y) = (array([5,3,8]), array([15,4,23]))
     (m, c, _) = solve_linear(x, [y])
     print("x = " + str(x) + ", y = " + str(y) + ", sol = " + str(m*x+c))
+    print(os_run("wine lqns testbed.lqn"))
+    print(sublist([1,2,3,4,5], [1,3]))
