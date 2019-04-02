@@ -1,13 +1,14 @@
 import os, re, sys, traceback
 import yaml, logging, logging.handlers
 import pickle, subprocess
+from functools import reduce
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract, size, append, transpose
 from numpy import gradient, mean, std, outer, vstack, concatenate
 from numpy.linalg import inv, lstsq
-from scipy import stats
-from functools import reduce
 from random import random
+from scipy import stats
+from sklearn.decomposition import PCA
 from time import time
 
 logger = logging.getLogger("Utils")
@@ -142,25 +143,24 @@ def sublist(lst, ids):
     return [v for i,v in filter(lambda v:v[0] in ids, zip(range(len(lst)),lst))]
 
 
+def getpca(n_comp, y): 
+    pca = PCA(n_components=n_comp)
+    return pca.fit_transform(array(y).T) 
+
+
+def project(n_comp, y, m):
+    return dot(getpca(n_comp, y).T, m)
+
+
 # Approximates A for A*x = y
 def solve_linear(x, ys, m_c = None):
-    y_avg = array(list(map(sum, array(ys).T))).T / len(ys)
-    def project(x1): 
-        if len(shape(x1)) > 1 and shape(x1)[1]>1:
-            x1 = array(list(map(sum, x1.T))).T / len(x1) 
-        elif len(x1) < len(y_avg):
-            x1 = concatenate((array(x1), ones(len(y_avg) - len(x1))))
-        x1 = x1.reshape(len(x1), 1)
-        logger.debug("project.x1 = " + str(x1) + ", shape = " + str(x1.shape))
-        return x1
     if m_c:
-        return (m_c[0], m_c[1], project)
-    hx = project(x).T[0]
-    A = vstack([array(hx), ones(len(hx))]).T
-    logger.debug("A=" + str(A) + ", y=" + str(ys) + ", y_avg = " + str(y_avg))
-    m, c = lstsq(A, y_avg, rcond=None)[0]
-    logger.debug("m,c = " + str((m,c)))
-    return (m, c, project)
+        return (m_c[0], m_c[1])
+    y_pc = getpca(len(x), ys)
+    logger.debug("y=" + str(ys) + ", y_pc = " + str(y_pc))
+    (m, c) = (lstsq(y_pc.T, array(x).reshape(len(x),1), rcond=None)[0], 0)
+    logger.debug("solve_linear().m,m.y_pc,x) = " + str((m,dot(y_pc.T,m),x)))
+    return (m, c)
 
 
 def rotate_right(m):
@@ -218,9 +218,9 @@ if __name__ == "__main__":
     print(symmetric([1,2,3], [4,5,6]))
     print(symmetric([1,2,3]))
     print(symmetric([1,2,3,4], [5,6,7,8,9,10]))
-    (x, y) = (array([5,3,8]), array([15,4,23]))
-    (m, c, _) = solve_linear(x, [y])
-    print("x = " + str(x) + ", y = " + str(y) + ", sol = " + str(m*x+c))
+    (x, y) = (array([5,3,8]), array([[random() for i in range(24)] for j in range(10)]))
+    (m, c) = solve_linear(x, y)
+    print("y,sol,x = " + str((y, dot(getpca(len(x),y).T,m), x)))
     print(os_run("wine lqns testbed.lqn"))
     print(sublist([1,2,3,4,5], [1,3]))
     print(merge_state({"abc": {"def": 1, "ghi": 2}}))

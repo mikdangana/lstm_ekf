@@ -2,10 +2,13 @@ from config import *
 from utils import *
 from ekf import *
 from lstm import *
+from client import *
 from time import sleep
 from numpy import subtract, concatenate, divide
 import config
 import threading
+import io
+from contextlib import redirect_stdout
 
 
 test_msmt = []
@@ -193,49 +196,6 @@ def track_accuracies(ekf, count, filename, label=""):
 
 
 
-def run_monitors():
-    for host in set(get_config("lqn-hosts")):
-        threading.Thread(target=create_monitor(host)).start()
-    logger.info("Monitors created")
-    print("\nNow monitoring hosts " + str(set(get_config('lqn-hosts'))) + "\n")
-
-
-
-def create_monitor(host):
-    def monitor_loop():
-        for sample in range(1):
-            monitor_host(host)
-            sleep(1)
-        os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
-        os_run("rm " + host + "*.pickle")
-        logger.info("Monitor done on host " + host)
-    return monitor_loop
-
-
-
-def monitor_host(host):
-    if not host in monitor_msmts:
-        monitor_msmts[host] = []
-        # Tune host ekf
-        def label_fn(model, X, labels=[], sample_size=10):
-            return bootstrap_labels(model, X, labels, sample_size, host)
-        lstm_model, X, _ = tune_model(n_epochs, label_fn)
-        history = [measurements(True, host+"_") for x in range(10)]
-        monitor_msmts[host].extend(history)
-        coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
-        logger.info("coeffs = " + str(coeffs[-1]))
-        ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
-        lqn_vals = solve_lqn(0)
-        m, c, _ = solve_linear(lqn_vals, monitor_msmts[host])
-        merge_state({"lqn-ekf-model": {"m": float(m), "c": float(c)}})
-        logger.info("Tuning done for host: " + host)
-
-    do_action(update_ekf(ekfs[host], [monitor_msmts[host][-1]])[1], host)
-    monitor_msmts[host].append(measurements(True, host+"_"))
-    ekf_accuracies(ekfs[host], monitor_msmts[host][-1], None, "", False, host)
-
-
-
 def tuned_accuracy():
     if n_iterations > 1:
         run_async("activity-cmd")
@@ -265,8 +225,52 @@ def run_test():
     logger.info("Tuned EKF accuracy = "+str(tuned)+", mean="+str(1+mean(tuned)))
     logger.info("Raw EKF accuracy = "+str(raw)+", mean = "+str(1+mean(raw))) 
     logger.info("(1-TunedErr/RawErr) = " + str(1-mean(tuned)/mean(raw)))
-    
 
+
+def run_monitors():
+    for host in set(get_config("lqn-hosts")):
+        threading.Thread(target=create_monitor(host)).start()
+    logger.info("Monitors created")
+    print("\nNow monitoring hosts " + str(set(get_config('lqn-hosts'))) + "\n")
+
+
+
+def create_monitor(host):
+    def monitor_loop():
+        for sample in range(150): 
+            monitor_host(host)
+            sleep(1)
+        os_run("mv measurements.pickle " + host + "_measurements.pickle")
+        os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
+        os_run("rm " + host + "*.pickle")
+        logger.info("Monitor done on host " + host)
+    return monitor_loop
+
+
+
+def monitor_host(host):
+    if not host in monitor_msmts:
+        monitor_msmts[host] = []
+        # Tune host ekf
+        def label_fn(model, X, labels=[], sample_size=10):
+            return bootstrap_labels(model, X, labels, sample_size,host+"_boost")
+        lstm_model, X, _ = tune_model(n_epochs, label_fn)
+        history = [measurements(True, host+"_") for x in range(10)]
+        monitor_msmts[host].extend(history)
+        coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
+        logger.info("coeffs = " + str(coeffs[-1]))
+        ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
+        lqn_vals = solve_lqn(0)
+        m, c = solve_linear(lqn_vals, monitor_msmts[host])
+        merge_state({"lqn-ekf-model": {"m": m, "c": float(c)}})
+        logger.info("Tuning done for host: " + host)
+
+    if active_monitor:
+        do_action(update_ekf(ekfs[host], [monitor_msmts[host][-1]])[1], host)
+    monitor_msmts[host].append(measurements(True, host+"_"))
+    ekf_accuracies(ekfs[host], monitor_msmts[host][-1], None, "", False, host)
+
+    
 
 if __name__ == "__main__":
     process_args()
@@ -275,4 +279,14 @@ if __name__ == "__main__":
         run_test()
     else:
         run_monitors()
+    if "--generate-traffic" in sys.argv or "-g" in sys.argv:
+        for endp in ["db-endpoint", "search-endpoint"]:
+            sleep(10)
+            f = io.StringIO()
+            with redirect_stdout(f):
+                test_client(endp)
+            pickledump("clientout.pickle", f.getvalue())
+            os_run("tar rvf pickles_" + endp + ".tar *.pickle")
+            os_run("rm *.pickle")
+            print("Client " + endp + " done")
     print("Output in lstm_ekf.log...")

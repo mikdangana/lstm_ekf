@@ -10,6 +10,7 @@ START_TIME = default_timer()
 
 def fetch(session, index, cmd_cfg):
     base_url = get_config(cmd_cfg)
+    print("fetch().base_url = " + str(base_url) + ", cfg = " + str(cmd_cfg))
     sleep(index * n_user_rate_s)
     START_TIME = default_timer()
     with session.get(base_url) as response:
@@ -42,11 +43,16 @@ async def get_data_asynchronous(cmd_cfg):
                 pass
 
 
-
-def main():
-    cmd_cfg = "db-endpoint" if len(sys.argv)<2 else sys.argv[1]
+def test_client(cmd_cfg):
     loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(get_data_asynchronous(cmd_cfg))
     loop.run_until_complete(future)
 
-main() 
+
+def main():
+    cmd_cfg = "db-endpoint" if len(sys.argv)<2 else sys.argv[1]
+    test_client(cmd_cfg)
+
+
+if __name__ == "__main__":
+    main() 

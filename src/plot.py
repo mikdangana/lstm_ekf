@@ -26,6 +26,13 @@ def loadfiles(filenames):
     return data
 
 
+def showfig(fname):
+    if save:
+        savefig(fname)
+    else:
+        show()
+
+
 def plotpredictions(args):
     predictions, metric = load(args[0] if len(args) else "")
     x = list(map(lambda x: x[0][metric], predictions))
@@ -37,8 +44,8 @@ def plotpredictions(args):
     lgd = ['step(x,50)', 'exp(x)', 'sin(x)', 'erf(x)']
 
     legend((xline, yline), (lgd[metric], 'EKF.x_prior'))
-    title('EKF Prior Prediction Vs ' + lgd[metric])
-    show()
+    text = title('EKF Prior Prediction Vs ' + lgd[metric])
+    showfig(title.replace(" ", "_") + ".pdf")
 
 
 
@@ -69,12 +76,12 @@ def plotlines(filenames):
     if len(filenames) <= 1:
         plot(x, data[0], 'r--')
         ylabel(lgd[filenames[0]] + '(red)')
-        title(lgd[filenames[0]] + ' vs Time')
+        text = title(lgd[filenames[0]] + ' vs Time')
     else:
         plot(x, data[0], 'r--', x, data[1], 'g^', label='L2')
         ylabel(lgd[filenames[0]] + '(red) & ' + lgd[filenames[1]] + '(green)')
-        title('Comparing Tuned & Plain EKF Accuracy vs Time')
-    show()
+        text = title('Comparing Tuned & Plain EKF Accuracy vs Time')
+    showfig(text.replace(" ", "_") + ".pdf")
 
 
 def delta_convergence(data):
@@ -137,8 +144,8 @@ def plotscatter(filenames):
     scatter('a', 'b', c='c', s='d', data=data)
     xlabel('Iteration')
     ylabel('Accuracy by perf metric')
-    title('Bootstrap Accuracies Per Process')
-    show()
+    text = title('Bootstrap Accuracies Per Process')
+    showfig(text.replace(" ", "_") + ".pdf")
 
 
 
@@ -155,8 +162,10 @@ def usage():
                         
 
 def main():
+    global save
+    save = "--save" in sys.argv
     try:
-        opts, args = getopt(sys.argv[1:], "hslp:3", ["help", "scatter", "line", "predictions", "surface3d"])
+        opts, args = getopt(sys.argv[1:], "hslp:3", ["help", "scatter", "line", "predictions", "surface3d", "save"])
     except GetoptError as err:
         print(str(err))
         usage()

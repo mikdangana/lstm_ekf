@@ -30,6 +30,7 @@ norms = [1000, 20, 20, 1000000000, 1000000000, 10000, 1, 1]
 procs = []
 n_user_rate_s = 0.0000001
 n_users = 10000
+active_monitor = True
 
 
 logger = logging.getLogger("Config")
@@ -37,16 +38,17 @@ logger = logging.getLogger("Config")
 
 def do_action(x_prior, host=None):
     global tasks
-    lqn = as_lqn_output([n[0] for n in x_prior[-1][-1]])
     ids = find(get_config("lqn-hosts"), host)
+    pred = convert_lqn([p[0] for p in x_prior], len(ids))
     thresholds = [float(t) for t in sublist(get_config("lqn-thresholds"), ids)]
     tasks = get_config('lqn-tasks') if not len(tasks) else tasks
-    logger.info("prediction = " + str(lqn) + ", thresholds=" + str(thresholds))
+    logger.info("prediction = " + str(pred) + ", thresholds=" + str(thresholds))
 
     for i,threshold in zip(range(len(thresholds)), thresholds):
         name = [k for k,v in tasks[i].items()][0]
-        logger.info("prior.ids,val,ts ="+str((ids, lqn[i+ids[0]],threshold)))
-        if (i in ids) and (lqn[i + ids[0]] >= threshold): 
+        logger.info("prior.ids,pred,i,ts ="+str((ids, pred, i, threshold)))
+        logger.info("prior.ids,val,ts ="+str((ids, pred[i+ids[0]],threshold)))
+        if (i in ids) and (pred[i + ids[0]] >= threshold): 
             res_info = solve_lqn(i + ids[0])
             for j,res in zip(range(len(tasks)), res_info[0:len(tasks)]):
                 resname = [k for k,v in tasks[j].items()][0]
@@ -79,11 +81,14 @@ def solve_lqn(metric_id):
 
 
 
-def as_lqn_output(msmts):
+def convert_lqn(msmts, n_comp):
+    msmts = [m.T[0] for m in msmts]
+    msmts.extend([msmts[-1] for i in range(n_comp - len(msmts))])
+    logger.debug("msmts,shape = " + str((msmts, shape(msmts))))
     state = load_state()
     model = state['lqn-ekf-model'] if 'lqn-ekf-model' in state else None
     (m, c) = (model['m'], model['c']) if model else (1, 0)
-    return m * array(msmts) + c
+    return array(dot(getpca(n_comp, msmts).T, m)).T[0]
 
 
 def run_actions(cmds, pos):
@@ -205,6 +210,7 @@ def process_args():
     global n_coeff
     global n_epochs
     global n_iterations
+    global active_monitor
     args = sys.argv[1:]
     for i,j in zip(args, args[1:] + ['']):
         if i == "--twod" or i == "-2d":
@@ -216,6 +222,8 @@ def process_args():
         elif i == "--iterations" or i == "-i":
             n_iterations = int(j)
             logger.info("set test iterations to " + j)
+        elif i == "--passive" or i == "-p":
+            active_monitor = False
         elif i == "--help" or i == "-h":
             usage()
             exit()

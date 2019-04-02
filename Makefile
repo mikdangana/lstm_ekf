@@ -22,7 +22,19 @@ lint:
 
 flush: clean
 	@echo "\nRunning 2d...\n"
-	python src/controller.py --iterations 1 --epochs 1 --twod 
+	python src/controller.py --iterations 1 --epochs 1 --twod  -t
+
+monitor: clean
+	@echo "\nRunning Monitors...\n"
+	python src/controller.py
+
+active: clean
+	@echo "\nRunning Passive Monitors with Traffic...\n"
+	python src/controller.py --generate-traffic
+
+passive: clean
+	@echo "\nRunning Passive Monitors with Traffic...\n"
+	python src/controller.py --passive --generate-traffic
 
 test: clean testekf testlstm testctl
 
@@ -40,4 +52,4 @@ testctl:
 
 run:
 	@echo "\nRunning Controller...\n"
-	python src/controller.py --iterations 10 --epochs 2
+	python src/controller.py --iterations 10 --epochs 2 -t

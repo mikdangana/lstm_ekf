@@ -44,20 +44,25 @@ def plotsurface(files = []):
     ymax = max(list(map(lambda m: len(m), msmts)))
     xmax = len(msmts)
     xstep = 5
+    print("ymax = " + str(ymax) + ", xmax = " + str(xmax) + ", msmts = " + \
+        str(len(msmts)) + ", xmax/xstep = " + str(xmax/xstep))
     X = np.arange(0, xmax, xstep)
-    Y = np.arange(0, ymax, int(ymax/(xmax/xstep)))[0:len(X)]
+    Y = np.arange(0, ymax, max(1, int(ymax/(xmax/xstep))))[0:len(X)]
     msmts = list(map(sortPID, msmts))
     msmts = list(map(lambda m: extend(m, ymax), msmts))
-    print("ymax = " + str(ymax) + ", xmax = " + str(xmax) + ", msmts.len = " + str(len(msmts)) + ", X[-1] = " + str(X[-1]) + ", Y[-1] = " + str(Y[-1]) + ", X.shape = " + str(X.shape) + ", Y.shape = " + str(Y.shape))
-    Z = twod(list(map(lambda x:list(map(lambda y:msmts[int(x)][int(y)],Y)),X)))
+    print("ymax = " + str(ymax) + ", xmax = " + str(xmax) + ", msmts.len = " + \
+        str(len(msmts)) + ", X[-1]=" + str(X[-1]) + ", Y[-1]=" + str(Y[-1]) + \
+        ", X.shape = " + str(X.shape) + ", Y.shape = " + str(Y.shape))
+    Z = twod([[msmts[int(x)][int(y)] for y in Y] for x in X])
     X, Y = np.meshgrid(X, Y)
     means = list(map(lambda row: avg(row), Z))
     maxs = list(map(lambda row: max(row), Z))
     def normX(x):
-        return list(map(lambda y:(Z[x][y]-means[x])/(maxs[x]),range(len(Z[x]))))
-    Z = twod(list(map(normX, range(len(Z)))))
+        return [(Z[x][y]-means[x])/(maxs[x]) for y in range(len(Z[x]))]
+    Z = twod([normX(i) for i in range(len(Z))]).T
 
-    print("Z.shape = " + str(Z.shape) + ", X.shape = " + str(X.shape) + ", Y.shape = " + str(Y.shape))
+    print("Z.shape = " + str(Z.shape) + ", X.shape = " + str(X.shape) + \
+          ", Y.shape = " + str(Y.shape))
 
     # Plot the surface.
     surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
@@ -66,8 +71,8 @@ def plotsurface(files = []):
     # Customize the z axis.
     ax.set_zlim(-1.01, 1.01)
     ax.set_zlabel('Normalized value')
-    ax.set_xlabel('Iteration')
-    ax.set_ylabel('Process metric')
+    ax.set_xlabel('Process metric')
+    ax.set_ylabel('Iteration')
     ax.zaxis.set_major_locator(LinearLocator(10))
     ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
 
