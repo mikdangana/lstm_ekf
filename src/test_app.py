@@ -12,7 +12,7 @@ if __name__ == "__main__":
     verbose = "-v" in sys.argv or "--verbose" in sys.argv
     (i, nums) = (0, [10])
     while True: 
-        nums = nums + nums
+        nums = nums + nums if not len(nums) % 10000 else [10]
         i += 1
         if i % 25 == 0:
             show("sleeping, nums = " + str(len(nums)) + ", i = " + str(i))
