@@ -10,7 +10,6 @@ START_TIME = default_timer()
 
 def fetch(session, index, cmd_cfg):
     base_url = get_config(cmd_cfg)
-    print("fetch().base_url = " + str(base_url) + ", cfg = " + str(cmd_cfg))
     sleep(index * n_user_rate_s)
     START_TIME = default_timer()
     with session.get(base_url) as response:
@@ -51,6 +50,8 @@ def test_client(cmd_cfg):
 
 def main():
     cmd_cfg = "db-endpoint" if len(sys.argv)<2 else sys.argv[1]
+    base_url = get_config(cmd_cfg)
+    print("fetch().base_url = " + str(base_url) + ", cfg = " + str(cmd_cfg))
     test_client(cmd_cfg)
 
 

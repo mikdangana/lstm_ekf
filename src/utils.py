@@ -154,10 +154,10 @@ def project(n_comp, y, m):
 
 # Approximates A for A*x = y
 def solve_linear(x, ys, m_c = None):
-    if m_c:
-        return (m_c[0], m_c[1])
+    if m_c or not len(ys):
+        return (m_c[0], m_c[1]) if m_c else (1, 0)
     y_pc = getpca(len(x), ys)
-    logger.debug("y=" + str(ys) + ", y_pc = " + str(y_pc))
+    logger.debug("y=" + str(shape(ys)) + ", y_pc = " + str(shape(y_pc)))
     (m, c) = (lstsq(y_pc.T, array(x).reshape(len(x),1), rcond=None)[0], 0)
     logger.debug("solve_linear().m,m.y_pc,x) = " + str((m,dot(y_pc.T,m),x)))
     return (m, c)
@@ -172,6 +172,8 @@ def isconverged(data, confidence=0.95):
 
 
 def convergence(data):
+    if not len(data):
+        return []
     (stat, stds, window, step, tolerance) = ([], [], 3, int(len(data)/10), 0.03)
     for i in range(int(len(data)/step)):
         stds.append(std(data[i*step:(i+1) * step]))
@@ -182,6 +184,7 @@ def convergence(data):
         stat.append(confidence)
     logger.info("convergence.confidences = " + str(stat[1:]) + ", data = " + str(shape(data)) + ", stds = " + str(stds))
     return stat[1:] # Ignore 1st window, its always 100% by definition
+
 
 
 def twod(lst):

@@ -29,7 +29,7 @@ monitor: clean
 	python src/controller.py
 
 active: clean
-	@echo "\nRunning Passive Monitors with Traffic...\n"
+	@echo "\nRunning Active Monitors with Traffic...\n"
 	python src/controller.py --generate-traffic
 
 passive: clean
@@ -46,7 +46,7 @@ testlstm: clean
 	@echo "\nTesting LSTM Unit...\n"
 	python src/lstm.py
 
-testctl:
+testctl: clean
 	@echo "\nTesting Control Unit...\n"
 	python src/controller.py --iterations 10 --epochs 2 --test
 

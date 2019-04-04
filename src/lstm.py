@@ -115,24 +115,28 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
         batch_data = list(map(lambda l: l[1:], labels))
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
-        #if (isconverged(list(map(lambda l: l
-        for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
-            # Remember 'cost' contains the model
-            _, total_cost = tf_run([train_op, cost], feed_dict =
-                {X: to_size(batch_x, n_msmt, n_entries), 
-                 Y: to_size(batch_y, n_lstm_out, n_entries)})
-            logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
-               str(shape(batch_y)) + ", cost = " + str(total_cost) + 
-               ", batch " + str(i+1) + " of " + str(len(train_data)) + 
-               ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
-            set_lstm_initialized()
-            costs.append(total_cost)
+        train(train_op, cost, X, Y, train_data, costs, epoch)
         logger.debug("Epoch = " + str(epoch) + ", train_data = " +
-            str(shape(train_data)) + ", test_data = " + str(shape(test_data))+
-            ", cost=" +str(total_cost))
+            str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
 
     pickleconc("train_costs.pickle", costs)
     return test(model, X, Y, test_data)
+
+
+
+def train(train_op, cost, X, Y, train_data, costs, epoch):
+    for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
+        # Remember 'cost' contains the model
+        _, total_cost = tf_run([train_op, cost], feed_dict =
+            {X: to_size(batch_x, n_msmt, n_entries), 
+             Y: to_size(batch_y, n_lstm_out, n_entries)})
+        logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
+           str(shape(batch_y)) + ", cost = " + str(total_cost) + 
+           ", batch " + str(i+1) + " of " + str(len(train_data)) + 
+           ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
+        set_lstm_initialized()
+        costs.append(total_cost)
+
 
 
 def test(model, X, Y, test_data):

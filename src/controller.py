@@ -15,28 +15,28 @@ test_msmt = []
 dimz = int(n_msmt/2)
 msmts = []
 mcount = 0
+threads = []
 monitor_msmts = {}
 ekfs = {}
 
 
 # Only the first n_msmt values are used, the rest are ignored by LSTM & EKF
-def measurements(simulated = True, host = ""):
+def measurements(simulated = False, host = ""):
     if simulated:
         return sim_measurements(host)
-    cmd = "top -b -n 1 | tail -121 | sort -n | " + \
-            " awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'" 
-    if host:
-        cmd = get_config("login-"+host) + " -t '" + cmd + "'"
-    pstats = os_run(cmd).split()
+    cmd = get_config("memory-cmd-" + host)
+    cmd = "top -b -n 1 -o %MEM" if not cmd else cmd
+    cmd = cmd + " | grep \"^ *[0-9]\""
+    if host and len(host):
+        cmd = get_config("login-"+host) + " -o LogLevel=QUIET -t '" + cmd + "'"
+    pstats = os_run(cmd + " | awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'")
+    pstats = pstats.split() if pstats else ""
     logger.info(str(len(pstats)) + " measurements retrieved")
-    def normalize(v):
-        return float32(v[1])/norms[v[0] % 8] if v[1]!="rt" else 0
     pstatsf = list(map(normalize, zip(range(len(pstats)), pstats)))
-    pstatsf = pstatsf[0:dimz]
-    pstatsf.extend(zeros(dimz))
+    pstatsf = pstatsf[0:dimz] + list(zeros(dimz))
     logger.info("parsed measurements, size=" + str(len(pstatsf)))
     pickleadd(host + "measurements.pickle", array(pstatsf).flatten())
-    return pstatsf
+    return pstatsf if len(pstatsf)==n_msmt else []
 
 
 def sim_measurements(pre=""):
@@ -46,7 +46,7 @@ def sim_measurements(pre=""):
     prev = msmts[-1] if len(msmts)%100 else zeros(n_msmt) + delta
     factors = list(range(n_msmt))
     factors.sort(key = lambda v: v, reverse=True)
-    pstatsf = list(map(lambda i:prev[i]*(1+i)/10, factors))
+    pstatsf = [prev[i]*(1+i)/10 for i in factors]
     msmts.append(pstatsf)
     pickleadd(pre + "measurements.pickle", array(pstatsf).flatten())
     logger.info("msmts = " + str(pstatsf))
@@ -73,10 +73,10 @@ def predict_coeffs(model, newdata, X, randomize=False):
 
 
 # Creates a baseline coeff/EKF and tracks its performance over a sample history
-def baseline_accuracy(model, sample_size, X):
+def baseline_accuracy(model, sample_size, X, host):
     (baseline, ekf, msmts, history) = ([], None, [], [])
     for i in range(0, sample_size):
-        new_msmts = measurements()
+        new_msmts = measurements(False, host)
         logger.info("i = " + str(i) + ", new_msmts = " + str(shape(new_msmts)))
         if len(msmts):
             if not ekf:
@@ -93,14 +93,16 @@ def baseline_accuracy(model, sample_size, X):
 
 
 # Generates training labels by a bootstrap active-learning approach 
-def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot"):
+def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
     (labels, msmts, history, coeffs) = ([], [], [], [])
-    (accuracies, ekf_baseline) = ([], baseline_accuracy(model, sample_size, X))
+    (accuracies, ekf_baseline) = ([], 
+        baseline_accuracy(model, sample_size, X, host))
     for i in range(0, sample_size):
-        new_msmts = measurements()
+        new_msmts = measurements(False, host)
         history.append(msmts)
         add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, i)
         msmts = new_msmts
+    pre = host + pre
     pickleconc(pre+"_accuracies.pickle", list(map(lambda a:a[-1], accuracies)))
     pickleconc(pre+"_profiles.pickle", list(map(lambda a:a[0], accuracies)))
     pickleconc(pre+"_coeffs.pickle", coeffs)
@@ -181,7 +183,7 @@ def track_accuracies(ekf, count, filename, label=""):
         if len(test_msmt) <= i:
             test_msmt.append(measurements())
         msmts = test_msmt[i]
-        nerrs.append(ekf_accuracies(ekf, msmts, range(dimz), label))
+        nerrs.append(ekf_accuracies(ekf, msmts, range(n_msmt), label))
         accuracies.append(nerrs[-1][-1])
         update_ekf(ekf, [msmts])
         logger.info(label +" accuracy[" + str(i) + "] = " + str(accuracies[-1]))
@@ -229,7 +231,8 @@ def run_test():
 
 def run_monitors():
     for host in set(get_config("lqn-hosts")):
-        threading.Thread(target=create_monitor(host)).start()
+        threads.append(threading.Thread(target=create_monitor(host)))
+        threads[-1].start()
     logger.info("Monitors created")
     print("\nNow monitoring hosts " + str(set(get_config('lqn-hosts'))) + "\n")
 
@@ -237,8 +240,9 @@ def run_monitors():
 
 def create_monitor(host):
     def monitor_loop():
-        for sample in range(150): 
+        for sample in range(15): 
             monitor_host(host)
+            logger.info("Sample " + str(sample) + " of 150 done")
             sleep(1)
         os_run("mv measurements.pickle " + host + "_measurements.pickle")
         os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
@@ -250,27 +254,31 @@ def create_monitor(host):
 
 def monitor_host(host):
     if not host in monitor_msmts:
-        monitor_msmts[host] = []
-        # Tune host ekf
-        def label_fn(model, X, labels=[], sample_size=10):
-            return bootstrap_labels(model, X, labels, sample_size,host+"_boost")
-        lstm_model, X, _ = tune_model(n_epochs, label_fn)
-        history = [measurements(True, host+"_") for x in range(10)]
-        monitor_msmts[host].extend(history)
-        coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
-        logger.info("coeffs = " + str(coeffs[-1]))
-        ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
-        lqn_vals = solve_lqn(0)
-        m, c = solve_linear(lqn_vals, monitor_msmts[host])
-        merge_state({"lqn-ekf-model": {"m": m, "c": float(c)}})
-        logger.info("Tuning done for host: " + host)
-
+        tune_host(host)
     if active_monitor:
         do_action(update_ekf(ekfs[host], [monitor_msmts[host][-1]])[1], host)
-    monitor_msmts[host].append(measurements(True, host+"_"))
+    monitor_msmts[host].append(measurements(False, host))
     ekf_accuracies(ekfs[host], monitor_msmts[host][-1], None, "", False, host)
 
-    
+
+
+def tune_host(host):
+    monitor_msmts[host] = []
+    # Tune host ekf
+    def label_fn(model, X, labels=[], sample_size=10):
+        return bootstrap_labels(model, X, labels, sample_size, "boot", host)
+    lstm_model, X, _ = tune_model(n_epochs, label_fn)
+    history = [measurements(False, host) for x in range(10)]
+    monitor_msmts[host].extend(history)
+    coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
+    logger.info("coeffs = " + str(coeffs[-1]))
+    ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
+    lqn_vals = solve_lqn(0)
+    logger.info("msmts = " + str(monitor_msmts[host]))
+    m, c = solve_linear(lqn_vals, monitor_msmts[host])
+    merge_state({"lqn-ekf-model": {"m": m, "c": float(c)}})
+    logger.info("Tuning done for host: " + host)
+ 
 
 if __name__ == "__main__":
     process_args()
@@ -290,3 +298,6 @@ if __name__ == "__main__":
             os_run("rm *.pickle")
             print("Client " + endp + " done")
     print("Output in lstm_ekf.log...")
+    for t in threads: 
+        t.join()
+    print("Controller done")

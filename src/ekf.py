@@ -65,7 +65,8 @@ def ekf_mean(ekf, indices, state):
     (ekf,(m,c)) =(ekf['ekf'],ekf['mc']) if isinstance(ekf,dict) else (ekf,(1,0))
     nums = lambda ns : [n[0] for n in ns]
     prior = lambda kf: nums(m * get_ekf(kf).x_prior + c)
-    acc = lambda pt: -abs(pt[1]-pt[0])
+    #(maxp, mins) = (max(prior(ekf)), min(state))
+    acc = lambda pt: 1-abs(pt[1]-pt[0])/norms[pt[2] % len(norms)]
     accuracies = [acc(p) for p in zip(state,prior(ekf),range(len(state)))]
     logger.info("accuracies = " + str(accuracies) + \
         ", state = " + str(state) + ", prior = " + str(prior(ekf)))
@@ -126,6 +127,7 @@ def update_ekf(ekf, z_data, R=None, m_c = None):
 
 def ekf_track(coeffs, z_data):
     ekf, points = build_ekf(coeffs, z_data)
+    print("ekf_track().points = " + str(points))
     return list(zip(z_data, points[0]))
 
 
