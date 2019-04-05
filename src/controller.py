@@ -103,16 +103,16 @@ def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
         add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, i)
         msmts = new_msmts
     pre = host + pre
-    pickleconc(pre+"_accuracies.pickle", list(map(lambda a:a[-1], accuracies)))
-    pickleconc(pre+"_profiles.pickle", list(map(lambda a:a[0], accuracies)))
-    pickleconc(pre+"_coeffs.pickle", coeffs)
-    logger.info("isconverged[25:30] = " + str(list(map(lambda i: 
-        isconverged(list(map(lambda r: r[-1][i], coeffs))), range(25, 30)))))
+    pickleconc(pre + "_accuracies.pickle", [a[-1] for a in accuracies])
+    pickleconc(pre + "_profiles.pickle", [a[0] for a in accuracies])
+    pickleconc(pre + "_coeffs.pickle", coeffs)
+    logger.info("isconverged[25:30] = " + str(
+        [isconverged([r[-1][i] for r in coeffs]) for i in range(25, 30)]))
     labels.sort(key = lambda v: v[0], reverse=True)
     logger.info("batch label accuracies = " + 
-        str(list(map(lambda l:l[0], labels[0:int(0.1*len(labels))]))))
+        str([l[0] for l in labels[0:int(0.1*len(labels))]]))
     logger.info("batch labels = " + 
-        str(list(map(lambda l:l[1], labels[0:int(0.1*len(labels))]))))
+        str([l[1] for l in labels[0:int(0.1*len(labels))]]))
     return labels[0:int(0.1 * len(labels))]
 
 
