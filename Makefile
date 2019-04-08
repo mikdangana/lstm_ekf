@@ -50,6 +50,10 @@ testctl: clean
 	@echo "\nTesting Control Unit...\n"
 	python src/controller.py --iterations 10 --epochs 2 --test
 
+testconvergence: clean
+	@echo "\nTesting LSTM-EKF Convergence...\n"
+	python src/controller.py --test-convergence
+
 run:
 	@echo "\nRunning Controller...\n"
 	python src/controller.py --iterations 10 --epochs 2 -t
