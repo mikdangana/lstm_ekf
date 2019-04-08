@@ -76,6 +76,8 @@ def tf_run(*args, **kwargs):
 
 
 def weights_biases(base):
+    base = base + 1e-9
+    logger.info("bias = " + str(base))
     weights = {'out':tf.Variable(tf.ones([n_hidden, n_lstm_out]),name='w')}
     if n_msmt == n_coeff / 3:
         bias = zeros([n_entries, n_lstm_out]) + base

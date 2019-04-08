@@ -52,7 +52,12 @@ testctl: clean
 
 testconvergence: clean
 	@echo "\nTesting LSTM-EKF Convergence...\n"
-	python src/controller.py --test-convergence
+	python src/controller.py --test-convergence 0
+	python src/controller.py --test-convergence 1
+	python src/controller.py --test-convergence 2
+	python src/controller.py --test-convergence 3
+	python src/controller.py --test-convergence 4
+	python src/controller.py --test-convergence 5
 
 run:
 	@echo "\nRunning Controller...\n"

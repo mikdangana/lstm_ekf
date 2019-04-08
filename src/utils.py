@@ -134,6 +134,19 @@ def pickleload(filename):
     return []
 
 
+def occurrences(lst, search):
+    search = search if isinstance(search, list) else [search]
+    (ids, lstz) = ([], list(zip(range(len(lst)), lst)))
+    for s in search:
+        ids.extend(filter(lambda i: i>=0, [i if v==s else -1 for i,v in lstz]))
+    return ids
+
+
+def next(lst, item):
+    i = occurrences(lst, item)
+    return lst[i[0]+1] if len(i) and len(lst) > i[0] else None
+    
+
 def find(lst, val):
     ids = [i if v==val or not val else -1 for i,v in zip(range(len(lst)), lst)]
     return list(filter(lambda v: v>=0, ids))
@@ -227,3 +240,4 @@ if __name__ == "__main__":
     print(os_run("wine lqns testbed.lqn"))
     print(sublist([1,2,3,4,5], [1,3]))
     print(merge_state({"abc": {"def": 1, "ghi": 2}}))
+    print("occurrences = " + str(occurrences([1,2,3], [4,5,2])))

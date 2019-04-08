@@ -116,8 +116,6 @@ def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
     pickleconc(pre + "_accuracies.pickle", [a[-1] for a in accuracies])
     pickleconc(pre + "_profiles.pickle", [a[0] for a in accuracies])
     pickleconc(pre + "_coeffs.pickle", [c[0] for c in coeffs])
-    logger.info("isconverged[25:30] = " + str(
-        [isconverged([r[-1][i] for r in coeffs]) for i in range(25, 30)]))
     labels.sort(key = lambda v: v[0], reverse=True)
     logger.info("batch label accuracies = " + 
         str([l[0] for l in labels[0:int(0.1*len(labels))]]))
@@ -130,19 +128,20 @@ def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
 def add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, step):
     (action_interval, pred_per_sample, msmts) = (40, 10, history[-1])
     if len(msmts):
-        for j in range(0, pred_per_sample):
+        for j in range(pred_per_sample):
             coeffs.append(predict_coeffs(model, msmts, X))
             ekf = build_ekf(coeffs[-1][-1], [msmts]) 
             accs, accuracy = ekf_accuracies(ekf, new_msmts)
             #add_randoms_feature(labels, model, X, new_msmts, msmts)
             #add_raws_feature(labels, new_msmts, msmts)
-            add_ratio_feature(labels, new_msmts, history)
+            if j==0:
+                add_ratio_feature(labels, new_msmts, history)
             logger.info("sample = " + str(step) + ", pred_per_sample = " + 
                 str(j) + " of " + str(pred_per_sample) + ", coeffs = " +
                 str(coeffs[-1][-1]) + ", accuracy = " + str(accuracy))
             accuracies.append([accs, accuracy])
-            #labels.append([accuracy, to_size(msmts, n_msmt, n_entries), 
-             #                        to_size(coeffs[-1], n_entries, n_coeff)])
+            labels.append([accuracy, to_size(msmts, n_msmt, n_entries), 
+                                     to_size(coeffs[-1], n_entries, n_coeff)])
         if not simulated:
             sleep(0.5)
             if step % action_interval == 0:
@@ -242,8 +241,7 @@ def raw_accuracy():
 
 
 def run_test():
-    global test_msmt
-    test_msmt = [] 
+    reset_globals()
     [tuned, tavgs, tmaxs] = tuned_accuracy()
     [raw, ravgs, rmaxs] = raw_accuracy()
     maxs = list(map(max, zip(tmaxs, rmaxs)))
@@ -254,11 +252,12 @@ def run_test():
     logger.info("(1-TunedErr/RawErr) = " + str(1-mean(tuned)/mean(raw)))
 
 
-def run_test_convergence():
+def run_test_convergence(param):
     global simulated
     global gid
     simulated = True
-    for n in [len(generators)-2]: #range(len(generators)):
+    reset_globals()
+    for n in [int(param)] if param else range(len(generators)):
         gid = n
         run_test()
         os_run("mv tuned_accuracies.pickle tuned_accuracies_"+str(n)+".pickle")
@@ -271,6 +270,16 @@ def run_test_convergence():
     os_run("tar cvf test_convergence.tar *.pickle")
     os_run("rm *.pickle")
     logger.info("done")
+
+
+def reset_globals():
+    global test_msmt
+    global msmts
+    global mcount
+    test_msmt = []
+    msmts = []
+    mcount = 1
+
 
 
 def run_monitors():
@@ -331,7 +340,7 @@ if __name__ == "__main__":
     if "--test" in sys.argv or "-t" in sys.argv:
         run_test()
     elif "--test-convergence" in sys.argv or "-tc" in sys.argv:
-        run_test_convergence()
+        run_test_convergence(next(sys.argv, ["--test-convergence", "-tc"]))
     else:
         run_monitors()
     if "--generate-traffic" in sys.argv or "-g" in sys.argv:
@@ -343,7 +352,6 @@ if __name__ == "__main__":
             pickledump("clientout.pickle", f.getvalue())
             os_run("tar rvf pickles_" + endp + ".tar *.pickle")
             os_run("rm *.pickle")
-            print("Client " + endp + " done")
     print("Output in lstm_ekf.log...")
     for t in threads: 
         t.join()
