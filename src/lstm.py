@@ -1,5 +1,6 @@
 import tensorflow as tf
 import math
+from math import erf
 from config import *
 from utils import *
 import os, re, sys, traceback
@@ -25,7 +26,7 @@ def RNN(x, weights, biases):
         layers = [cell for layer in range(n_msmt)]
         multi_cell = tf.contrib.rnn.MultiRNNCell(layers)
         logger.info("RNN.cell,multi_cell,x = " + str((cell, multi_cell,x)))
-        outputs,states = tf.nn.dynamic_rnn(multi_cell,x,dtype=tf.float32)
+        outputs,states = tf.nn.dynamic_rnn(cell,x,dtype=tf.float32)
         model = tf.matmul(outputs, weights) + biases
     else:
         cell = tf.nn.rnn_cell.LSTMCell(n_hidden, activation=tf.nn.relu)
@@ -55,14 +56,17 @@ def repeat(x, n):
 # Generates test training labels
 def test_labels(model, X = None, labels = [], sample_size = 5):
     noise = 1.0 
-    symbols = [lambda x: 0 if x<50 else 1, math.exp, math.sin] 
+    #symbols = [lambda x: 0 if x<50 else 1, math.exp, math.sin] 
+    symbols = [math.exp, math.sin] 
     for i in range(sample_size):
         for s in range(len(symbols)):
             for k in range(10):
                 def measure(msmt):
                     val = symbols[s](k+1) 
                     return (1 - uniform(0.0, noise)) * val
-                labels.append([0.0, repeat(list(map(measure, range(n_msmt))), n_entries), repeat(repeat(s, n_lstm_out), n_entries)])
+                labels.append([0.0, 
+                    repeat(list(map(measure, range(n_msmt))), n_entries), 
+                    repeat(repeat(s, n_lstm_out), n_entries)])
             logger.debug("test_labels done with symbol " + str(symbols[s]))
     logger.debug("test_labels.labels = " + str(labels))
     return labels
@@ -76,7 +80,7 @@ def tf_run(*args, **kwargs):
 
 
 def weights_biases(base):
-    base = base + 1e-9
+    base = array(base) + 1e-9
     logger.info("bias = " + str(base))
     weights = {'out':tf.Variable(tf.ones([n_hidden, n_lstm_out]),name='w')}
     if n_msmt == n_coeff / 3:
@@ -112,12 +116,15 @@ def tune_logistic_model():
     X = tf.placeholder(tf.float32, [n_entries, n_msmt, n_features])
     Y = tf.placeholder(tf.float32, [1, n_lstm_out, n_classes])
     weights = tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
-    biases = tf.Variable(tf.zeros([n_classes]))
+    biases = tf.Variable(tf.ones([n_entries, n_msmt, n_classes])*1e-2)
     model = RNN(X, weights, biases)
-    labels = Y
-    cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-        labels = labels, logits = tf.nn.softmax(model)))
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learn_rate)
+    labels = tf.nn.softmax(Y)
+    labels = tf.reshape(Y, [n_lstm_out, n_classes])
+    logits = tf.reshape(model, [n_lstm_out, n_classes])
+    #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+     #   labels = labels, logits = model))
+    cost = tf.reduce_mean(tf.losses.softmax_cross_entropy(labels, logits))
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
     return [X, Y, model, cost, optimizer]
 
 
@@ -125,16 +132,17 @@ def best_label(model, X, labelfn):
     labels = labelfn(model, X, [])
     batch_data = [feature_classes(l[1:]) for l in labels]
     #batch_data.sort(key = lambda b: b[0], reverse=True)
-    logger.info("best label = " + str(batch_data[0][1][0][0]))
-    return batch_data[0][1][0][0]
+    logger.info("best label = " + str(batch_data[0][1]))
+    return array(batch_data[0][1]).T
 
 
 def feature_classes(batch):
     if use_logistic_regression:
         [msmts, lbls] = batch
+        logger.info("feature_classes.batch.lbls=" + str((lbls)))
         iden = eye(n_features)
-        msmts = [[iden[int(m*1)%n_features] for m in msmt] for msmt in msmts]
-        lbls = [[iden[int(c*1)] for c in coeffs] for coeffs in [lbls[-1]]]
+        msmts = [[iden[int(erf(m)*(n_features-1))] for m in ms] for ms in msmts]
+        lbls=[[iden[int(erf(c)*(n_classes-1))] for c in cs] for cs in lbls[-1:]]
         logger.info("feature_classes.msmts,lbls=" + str((msmts, lbls)))
         return [msmts, lbls]
     return batch
@@ -152,11 +160,11 @@ def set_lstm_initialized():
 
 
 def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
-    (test_data, costs) = ([], [])
+    (test_data, costs, labels) = ([], [], [])
 
     # Training
     for epoch in range(0, n_epochs):
-        labels = labelfn(model, X, [])
+        labels = labelfn(model, X, labels)
         batch_data = [feature_classes(l[1:]) for l in labels]
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
@@ -173,8 +181,10 @@ def train(train_op, cost, X, Y, train_data, costs, epoch):
     for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
         # Remember 'cost' contains the model
         _, total_cost = tf_run([train_op, cost], feed_dict =
-            {X: batch_x if use_logistic_regression else to_size(batch_x, n_msmt, n_entries), 
-             Y: batch_y if use_logistic_regression else to_size(batch_y, n_lstm_out, n_entries)})
+            {X: batch_x if use_logistic_regression else to_size(batch_x, n_msmt,
+                n_entries), 
+             Y: batch_y if use_logistic_regression else to_size(batch_y, 
+                n_lstm_out, n_entries)})
         logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
            str(shape(batch_y)) + ", cost = " + str(total_cost) + 
            ", batch " + str(i+1) + " of " + str(len(train_data)) + 
@@ -206,19 +216,24 @@ def test(model, X, Y, test_data):
 
 def test_logistic(model, X, Y, test_data):
     accs = []
-    preds = tf.reshape(model, [1, n_lstm_out, n_classes])
+    soft = tf.reshape(tf.nn.softmax(model), [1, n_lstm_out, n_classes])
+    preds = tf.reshape(tf.one_hot(tf.nn.top_k(soft).indices, n_classes), [1, n_lstm_out, n_classes])
     labels = Y
     tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)
     tf_recall = tf.metrics.recall(labels=labels, predictions=preds)
     tf_precision = tf.metrics.precision(labels=labels, predictions=preds)
     tf_tn = tf.metrics.true_negatives(labels=labels, predictions=preds)
     tf_fp = tf.metrics.false_positives(labels=labels, predictions=preds)
-    for (i, (test_x, test_y)) in zip(range(len(test_data)), test_data):
+    for (test_x, test_y) in test_data:
         accs.append(tf_run(
-               tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
-               feed_dict={X:test_x, Y:test_y}))
-        logger.info("acc, recall,precision = "+str(accs[-1]))
-        pickleadd("test_logit_accuracy.pickle", [v[1] for v in accs[-1]])
+            tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
+            feed_dict={X:test_x, Y:test_y}))
+        logger.info("pred=" + str(tf_run(tf.stack([preds,labels]),feed_dict={X:test_x, Y:test_y})))
+        logger.info("model=" + str(tf_run(model,feed_dict={X:test_x, Y:test_y})))
+        logger.info("soft=" + str(tf_run(soft, feed_dict={X:test_x, Y:test_y})))
+        logger.info("x = " + str(test_x) + ", y = " + str(test_y))
+        logger.info("acc, recall,precision = "+str((accs[-1], test_y, test_x)))
+    pickleadd("test_logit_accuracy.pickle", accs)
     return accs[-1] 
 
 

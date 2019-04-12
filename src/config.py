@@ -14,12 +14,13 @@ n_proc = 3
 n_msmt = 8 * n_proc # Kalman z
 dimx = n_msmt
 n_coeff = dimx * 2 + n_msmt # Kalman q, f, r
-n_entries = 2
+n_covariance = 3
+n_entries = 3
 n_lstm_out = n_coeff
 n_classes = int((5 - (-5)) / 1)
 n_features = n_classes
 # number of units in RNN cell
-n_hidden = 1
+n_hidden = 2
 learn_rate = 0.01
 n_epochs = 10
 n_iterations = 500
@@ -141,7 +142,9 @@ def get_steps(*cmd_path):
 
 def load_config():
     global config
-    with open("lstm_ekf.yaml", 'r') as stream:
+    yamlfile = os.path.dirname(os.path.abspath(__file__)) + "/../lstm_ekf.yaml"
+    logger.info("yaml file = " + str(yamlfile))
+    with open(yamlfile, 'r') as stream:
         try:
             config = yaml.load(stream)
         except yaml.YAMLError as ex:

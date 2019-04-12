@@ -118,6 +118,7 @@ def update_ekf(ekf, z_data, R=None, m_c = None):
             ekf.predict()
             priors[j].append(ekf.x_prior)
             ekf.update(z, hjacobian, h, R if len(shape(R)) else ekf.R)
+    logger.info("priors,z_data = " + str((priors, z_data)))
     return (ekf, priors)
 
 
@@ -142,10 +143,10 @@ def test_coeffs(generators):
 
 
 def get_generators():
-    generators = [lambda x: math.pow(1.01, x), 
+    generators = [lambda x: 0 if x<50 else 1, #math.pow(1.01, x), 
                   math.exp, 
-                  lambda x: random(),
-                  lambda x: math.sin((x-10)/10) + random()*0.25, 
+                  math.sin, #lambda x: random(),
+                  math.erf, #lambda x: math.sin((x-10)/10) + random()*0.25, 
                   math.erf,
                   lambda x: 1 if int(x/50) % 2==1 else 0]
     return generators
@@ -156,7 +157,7 @@ def test_ekf(generate_coeffs = test_coeffs):
     generators = get_generators()
     m_cs = [(10.0, 0.0) for i in range(len(generators))]
     (coeffs, accuracies, predictions) = (generate_coeffs(generators), [], [])
-    for n in range(1): #len(generators)):
+    for n in range(len(generators)):
         (train, test) = test_zdata(generators, n)
         logger.info("train[0:1] = " + str(train[0:1]))
         ekf, _ = build_ekf(coeffs, train, m_cs[n])
@@ -173,7 +174,7 @@ def test_ekf(generate_coeffs = test_coeffs):
 
 def test_zdata(generators, n):
     z_data = []
-    for v in (array(range(300))/30 if generators[n]==math.exp else range(100)):
+    for v in (array(range(300))/30 if generators[n] in [math.exp, math.sin] else range(100)):
         msmt = [generators[n](v) for m in range(n_msmt)]
         z_data.append(msmt)
     split = int(0.75 * len(z_data))

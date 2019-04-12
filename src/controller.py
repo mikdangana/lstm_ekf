@@ -135,7 +135,8 @@ def add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, step):
             #add_randoms_feature(labels, model, X, new_msmts, msmts)
             #add_raws_feature(labels, new_msmts, msmts)
             if j==0:
-                add_ratio_feature(labels, new_msmts, history)
+                ratios = add_ratio_feature([], new_msmts, history)
+                add_covariance_feature(labels, new_msmts, history, ratios)
             logger.info("sample = " + str(step) + ", pred_per_sample = " + 
                 str(j) + " of " + str(pred_per_sample) + ", coeffs = " +
                 str(coeffs[-1][-1]) + ", accuracy = " + str(accuracy))
@@ -191,7 +192,41 @@ def add_ratio_feature(labels, new_msmts, history):
         ", accuracy = " + str(acc) + ", new_msmts = " + str(new_msmts))
     labels.append([acc, to_size(msmts, n_msmt, n_entries), 
                         to_size(coeffs, n_entries, n_coeff)])
+    return coeffs
 
+
+
+def add_covariance_feature(labels, new_msmts, history, coeffs):
+    if n_coeff==n_msmt*3:
+        fs = [c[n_msmt:-n_msmt] for c in coeffs] + [ones(n_msmt)]
+    else:
+        index = n_msmt * n_msmt
+        fs = [c[index:-index] for c in coeffs] + [eye(n_msmt).flatten()]
+    (innovs, history) = get_innovations(history)
+    for prev,inno in zip(innovs[-n_covariance:], innovs[-n_covariance:][1:]):
+        for f in fs:
+            if n_coeff == n_msmt * 3:
+                q = diag(cov(array([prev, inno]).T)) + 1e-9
+            else:
+                q = cov(array([prev, inno]).T).flatten() + 1e-9
+            cs = list(map(lambda i: concatenate((q, f, q)), range(n_entries)))
+            ekf, _ = build_ekf(cs[-1], history)
+            ekf.predict()
+            accs, acc = ekf_accuracies(ekf, new_msmts)
+            logger.info("coeffs,shape = " + str((cs[-1], shape(cs[-1]))) +
+                ", prev,inno,pred = " + str((prev, inno, ekf.x_prior.T)) +
+                ", accuracy = " + str(acc) + ", new_msmts = " + str(new_msmts))
+            labels.append([acc, to_size(msmts, n_msmt, n_entries), 
+                                to_size(cs, n_entries, n_coeff)])
+
+
+def get_innovations(history):
+    history = list(filter(len, history))
+    _, preds = build_ekf([], history)
+    preds = [array(p).T[0] for p in preds[0]]
+    innovs = array(preds) - array(history)
+    logger.info("preds,innovs = " + str((preds, innovs)))
+    return (innovs, history)
 
 
 def track_accuracies(ekf, count, filename, label=""):
@@ -252,12 +287,12 @@ def run_test():
     logger.info("(1-TunedErr/RawErr) = " + str(1-mean(tuned)/mean(raw)))
 
 
-def run_test_convergence(param):
+def run_test_convergence(genid):
     global simulated
     global gid
     simulated = True
     reset_globals()
-    for n in [int(param)] if param else range(len(generators)):
+    for n in [int(genid)] if genid else range(len(generators)):
         gid = n
         run_test()
         os_run("mv tuned_accuracies.pickle tuned_accuracies_"+str(n)+".pickle")
