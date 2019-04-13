@@ -16,6 +16,22 @@ The EKF is used here to track system performance parameters and tune resource an
 # How to run
 
 * pip install filterpy
-* python lstm_ekf.py 
+* make
+
+# Run EKF tests
+* make testekf
+
+# Run LSTM tests
+* make testltm
+
+# Run controller tests
+* make testctl
+
+# Run controller convergence tests
+* make testconvergence
+
+# Note
+* Read the Makefile for other tests and operations like cleaning, flushing, etc. Extend functionality as desired.
+* Pickle files are generated when tests and/or the controller are ran. You may use src/plot.py to plot these
 
 Feel free to email me if there are any issues. Enjoy!
