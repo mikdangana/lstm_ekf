@@ -84,7 +84,8 @@ def weights_biases(base):
     logger.info("bias = " + str(base))
     weights = {'out':tf.Variable(tf.ones([n_hidden, n_lstm_out]),name='w')}
     if n_msmt == n_coeff / 3:
-        bias = zeros([n_entries, n_lstm_out]) + base
+        bias = zeros([n_entries, n_lstm_out]) + \
+                array(base).reshape(n_entries, n_lstm_out)
         biases = {'out': tf.convert_to_tensor(bias, name='b',dtype=tf.float32)}
     else:
         i = zeros(n_msmt * n_msmt) + base
@@ -217,8 +218,9 @@ def test(model, X, Y, test_data):
 def test_logistic(model, X, Y, test_data):
     accs = []
     soft = tf.reshape(tf.nn.softmax(model), [1, n_lstm_out, n_classes])
-    preds = tf.reshape(tf.one_hot(tf.nn.top_k(soft).indices, n_classes), [1, n_lstm_out, n_classes])
-    labels = Y
+    preds = tf.argmax(tf.reshape(tf.one_hot(tf.nn.top_k(soft).indices, 
+        n_classes), [1, n_lstm_out, n_classes]), 1)
+    labels = tf.argmax(Y, 1)
     tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)
     tf_recall = tf.metrics.recall(labels=labels, predictions=preds)
     tf_precision = tf.metrics.precision(labels=labels, predictions=preds)
@@ -228,15 +230,14 @@ def test_logistic(model, X, Y, test_data):
         accs.append(tf_run(
             tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
             feed_dict={X:test_x, Y:test_y}))
-        logger.info("pred=" + str(tf_run(tf.stack([preds,labels]),feed_dict={X:test_x, Y:test_y})))
-        logger.info("model=" + str(tf_run(model,feed_dict={X:test_x, Y:test_y})))
-        logger.info("soft=" + str(tf_run(soft, feed_dict={X:test_x, Y:test_y})))
+        logger.info("pred,labels=" + str(tf_run(tf.stack([preds,labels]),
+            feed_dict={X:test_x, Y:test_y})))
         logger.info("x = " + str(test_x) + ", y = " + str(test_y))
         logger.info("acc, recall,precision = "+str((accs[-1], test_y, test_x)))
-    pickleadd("test_logit_accuracy.pickle", accs)
+        pickleadd("test_logit_accuracy.pickle", accs[-1].flatten())
     return accs[-1] 
 
 
 if __name__ == "__main__":
-    tune_model(1)
+    tune_model(3)
     logger.debug("done")

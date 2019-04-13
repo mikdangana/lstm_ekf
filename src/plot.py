@@ -3,8 +3,10 @@ from numpy import array, gradient, mean, std
 from scipy import stats
 from math import log
 from getopt import getopt, GetoptError
+from pandas import DataFrame
 from surface3d import plotsurface
-import pickle
+import pickle, re
+import pylab
 
 
 def load(n):
@@ -26,62 +28,144 @@ def loadfiles(filenames):
     return data
 
 
-def showfig(fname):
-    if save:
-        savefig(fname)
-    else:
-        show()
+def parse_string(s):
+    rows = filter(lambda l: "fetch" not in l and len(l), s.split("\n"))
+    rows = [re.compile(r'\W+').split(r) for r in rows]
+    rows = [[r[0], r[1] + "." + r[2]] for r in rows]
+    return [[float(c.replace("s","")) for c in r] for r in rows[1:]]
 
 
 def plotpredictions(args):
     predictions, metric = load(args[0] if len(args) else "")
-    x = list(map(lambda x: x[0][metric], predictions))
-    y = list(map(lambda x: x[1][0][0], predictions))
+    x = list(map(lambda p: p[0][metric], predictions))
+    #y = list(map(lambda p: sum(p[1].T[0])/len(p[1].T[0]), predictions))
+    y = list(map(lambda p:p[1].T[0][0], predictions))
 
-    xline, = plot(x)
-    yline, = plot(y)
+    fig, host = subplots()
+    sub1 = host.twinx()
+
+    xline, = host.plot(x)
+    yline, = sub1.plot(y, "r-", label="x_prior")
+
+    sub1.set_ylabel(yline.get_label())
+    sub1.yaxis.label.set_color(yline.get_color())
+    sub1.spines["right"].set_visible(True)
 
     lgd = ['step(x,50)', 'exp(x)', 'sin(x)', 'erf(x)']
 
-    legend((xline, yline), (lgd[metric], 'EKF.x_prior'))
-    text = title('EKF Prior Prediction Vs ' + lgd[metric])
-    showfig(title.replace(" ", "_") + ".pdf")
+    #legend((xline, yline), (lgd[metric], 'EKF.x_prior'))
+    legend((lgd[metric if metric<len(lgd) else -1], 'EKF.x_prior'))
+    title('EKF Prior Prediction vs ' + lgd[metric if metric<len(lgd) else -1])
+    show()
 
 
+def formatline(data, isGradient, indices, intervals, normalize):
+    res = []
+    for n in range(len(data)):
+        d = formatlines(data, isGradient, indices,intervals,normalize,n)
+        res = res + d if len(indices) else res + [d]
+    if '--mean' in sys.argv:
+        res.append([mean(data[0][0:i+1]) for i in range(len(data[0]))])
+    return res
 
-def plotlines(filenames):
-    isGradient = len(list(filter(lambda f: f=="gradient", filenames))) 
-    intervals = list(filter(lambda f: ":" in f, filenames))
-    indices = list(filter(lambda f : f.isdigit(), filenames))
-    filenames = list(filter(lambda f : not f.isdigit() and f!="gradient" and not ":" in f, filenames))
-    data = loadfiles(filenames)
-    if not len(data):
-        return
 
+def formatlines(data, isGradient, indices, intervals, normalize, n):
+    print("formatlines.n,shape(data) = " + str((n, len(shape(data[n])))))
     if len(indices):
         if isGradient:
-            data = list(map(lambda i: gradient(array(list(map(lambda r:r[int(i)],data[0])))), indices)) 
-        else:
-            data = list(map(lambda i: list(map(lambda r:abs(r[int(i)]),data[0])), indices)) 
+            data=[[gradient(array([r[int(i)] for r in data[n]])) for i in indices]]
+        elif len(shape(data[n])) > 1:
+            data[n] = list(filter(lambda r: len(shape(r)), data[n]))
+            data[n] = [[r[int(i)] for r in data[n]] for i in indices]
+            print("formatline.data[n] = " +str(data[n][0:min(len(data[n]),10)]))
+    elif (len(data[n]) and len(shape(data[n])) > 1): 
+        data[n] = [r[-1] for r in data[n]]
 
     if len(intervals):
         (start, end) = intervals[0].split(":")
-        data[0] = data[0][int(start):int(end)]
-    print("plotlines().data[0] = " + str(len(data[0])) + ", std = " + str(std(data[0])) + ", mean = " + str(mean(data[0])) + ", convergence = " + str(is_converged(data[0])))
-    x = arange(0, len(data[0]), 1) 
+        data[n] = data[n][int(start):int(end)]
 
-    lgd = {'tuned_accuracies.pickle': 'Tuned Accuracy', 'raw_accuracies.pickle': 'Plain Accuracy', 'train_costs.pickle': 'Training Mean Square Error', 'test_costs.pickle': 'Testing Mean Squared Error', 'boot_coeffs.pickle': 'Single Coefficients'+(' Gradient ' if isGradient else '')+' Values' }
+    if normalize:
+        (maxd, mind) = (max([max(d) for d in data]),min([min(d) for d in data]))
+        data[n] = (array(data[n]) - mind) / (maxd - mind)
+    return data[n]
 
-    xlabel('Interval')
+
+
+def parse_line_args(args):
+    for k in ["--xaxis", "--yaxis", "--title"]:
+        if k in args:
+            i = args.index(k)
+            args[i+1] = "--" + args[i+1]
+    isGradient = "--gradient" in args or "-g" in args
+    normalize = "--normalize" in args or "-n" in args
+    intervals = list(filter(lambda f: ":" in f, args))
+    indices = list(filter(lambda f : f.isdigit(), args))
+    filenames = list(filter(lambda f : not f.isdigit() and not f.startswith("-") and not ":" in f, args))
+    data = loadfiles(filenames)
+    if not len(data):
+        return (None, None, isGradient)
+    filenames = filenames + ["mean"] if '--mean' in args else filenames
+    if isinstance(data[0], type("")):
+        data = [parse_string(data[0])]
+    data = formatline(data, isGradient, indices, intervals, normalize)
+    return (data, filenames, isGradient)
+
+
+def parse_title(fname):
+    return fname.replace("_"," ").replace(".pickle","").capitalize()
+
+
+def legend(isGradient, fnames = []):
+    legends = {'tuned_accuracies.pickle': 'Tuned Accuracy', 
+        'raw_accuracies.pickle': 'Plain Accuracy', 'train_costs.pickle': 
+        'Training Mean Square Error', 'test_costs.pickle': 
+        'Testing Mean Squared Error', 'boot_coeffs.pickle': 
+        'Coefficient'+(' Gradient ' if isGradient else '')+' Value' }
+    for fname in fnames:
+        if not fname in legends:
+            legends[fname] = parse_title(fname)
+    return legends
+
+
+def printstats(prefix, data):
+    for datum in data:
+        print(prefix + ".data = " + str(shape(datum)) + ", std = " + 
+            str(std(datum)) + ", mean = " + str(mean(datum))  + ", max = " + 
+            str(max(datum+[0])) + ", min = " + str(min(datum+[0])) + 
+            ", convergence = " + str(is_converged(datum)))
+
+
+def plotlines(args):
+    (data, filenames, isGradient) = parse_line_args(args)
+    if not data:
+         return
+    printstats("plotlines()", data)
+    lgd = legend(isGradient, filenames)
+    xlabel(nextv(args, '--xaxis', 'Interval'))
     if len(filenames) <= 1:
-        plot(x, data[0], 'r--')
-        ylabel(lgd[filenames[0]] + '(red)')
-        text = title(lgd[filenames[0]] + ' vs Time')
+        if '--vs' in args:
+            plot(data[0], data[1], 'r--')
+        else:
+            plot(arange(0, len(data[0]), 1), data[0], 'r--')
+        ylabel(nextv(args, '--yaxis', lgd[filenames[0]] + '(red)'))
+        title(nextv(args, '--title', lgd[filenames[0]] + ' vs Time'))
     else:
-        plot(x, data[0], 'r--', x, data[1], 'g^', label='L2')
-        ylabel(lgd[filenames[0]] + '(red) & ' + lgd[filenames[1]] + '(green)')
-        text = title('Comparing Tuned & Plain EKF Accuracy vs Time')
-    showfig(text.replace(" ", "_") + ".pdf")
+        styles = ['r--', 'b','g','y'] #['r--', 'g^', 'bo','y']
+        (x,n) =(data[0],1) if '--vs' in args else (arange(0, len(data[0]), 1),0)
+        for i,datum in zip(range(len(data[n:])), data[n:]):
+            df = DataFrame({'x': x, 'y' + str(i): datum})
+            plot('x','y'+str(i), styles[i], data=df, label=lgd[filenames[i]])
+        pylab.legend()
+        ylabel(nextv(args, '--yaxis', 'Value'))
+        title(nextv(args, '--title', 'Tuned vs Plain EKF Accuracy by Epoch'))
+    show()
+
+
+def nextv(lst, k, defaultval):
+    if k in lst:
+        return lst[lst.index(k)+1].replace("--", "")
+    return defaultval
 
 
 def delta_convergence(data):
@@ -102,16 +186,16 @@ def convergence(data):
         n = (i+1) * step
         stds.append(std(data[i*step:n]))
         #s = std(stds)
-        m = mean(stds) #stds[-window] if len(stds)>=window else stds)
+        win = stds[-window:]
+        m = mean(win) #stds[-window] if len(stds)>=window else stds)
         (l, u) = (m-t, m+t) #stats.norm.interval(t, loc=m, scale=1)
         #win = list(map(abs, data[i * step: n]))
         #grads = list(map(lambda x:abs(x[1]-x[0]), zip(stds[0:-1],stds[1:])))
         #print("win = " + str(win) + ", bounds = " + str((l,u)) + ", stds = " + str(stds) + ", grads = " + str(grads) + ", stds.mean = " + str(mean(stds)))
         #confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
-        win = stds[-window:]
         confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
         stat.append(confidence)
-    print("confidences = " + str(stat))
+    print("confidences = " + str(stat) + ", stds = " + str(stds))
     return stat[1:] # Ignore 1st window, its always 100% by definition
 
 
@@ -132,7 +216,6 @@ def plotscatter(filenames):
     data = data[0] if len(data) else data
     if not len(data):
         return
-    print("scatter.data.shape = " + str(shape(data)))
     dimx = len(data[0][0])
     print("scatter.dimx = " + str(dimx))
     x = array(mapl(lambda i: repeat(i, dimx), range(len(data)))).flatten()
@@ -144,28 +227,31 @@ def plotscatter(filenames):
     scatter('a', 'b', c='c', s='d', data=data)
     xlabel('Iteration')
     ylabel('Accuracy by perf metric')
-    text = title('Bootstrap Accuracies Per Process')
-    showfig(text.replace(" ", "_") + ".pdf")
+    title('Bootstrap Accuracies Per Process')
+    show()
 
 
 
 def usage():
-    print("\nUsage: " + sys.argv[0] + " [-h | -s | -l | -p | -3d] [file(s)]\n" +
+    print("\nUsage: " + sys.argv[0] + " [-h | -s | -l | -p | -3] [file(s)]\n" +
         "\nPlots data stored in pickle files\n" +
         "\nOptional arguments:\n\n" +
         "-h, --help              Show this help message and exit\n" +
         "-s, --scatter     FILE  Scatter plot for 2d array\n" +
         "-l, --line        FILES Plot one or more 1d arrays\n" +
         "-p, --predictions FILE  Plot predictions in predicions[n].pickle\n" +
-        "-3d, --surface3d  FILE  3d surface plot")
+        "-3d, --surface3d  FILE  3d surface plot\n" +
+        "--xaxis           TEXT  x-axis label (with --line)\n" +
+        "--yaxis           TEXT  y-axis label (with --line)\n" +
+        "--title           TEXT  title (with --line)\n" +
+        "--vs                    dataset/FILE 1 as x-axis (with --line)\n" +
+        "--mean                  add mean line to plot (with --line)")
 
                         
 
 def main():
-    global save
-    save = "--save" in sys.argv
     try:
-        opts, args = getopt(sys.argv[1:], "hslp:3", ["help", "scatter", "line", "predictions", "surface3d", "save"])
+        opts, args = getopt(sys.argv[1:], "hslp:3", ["help", "scatter", "line", "predictions", "surface3d"])
     except GetoptError as err:
         print(str(err))
         usage()
