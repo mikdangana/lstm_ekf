@@ -18,6 +18,9 @@ The EKF is used here to track system performance parameters and tune resource an
 * pip install filterpy
 * make
 
+# Run all basic tests
+* make test
+
 # Run EKF tests
 * make testekf
 
