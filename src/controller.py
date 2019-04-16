@@ -137,6 +137,7 @@ def add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, step):
             if j==0:
                 ratios = add_ratio_feature([], new_msmts, history)
                 add_covariance_feature(labels, new_msmts, history, ratios)
+                #add_linearmodel_feature(labels, new_msmts, history, ratios)
             logger.info("sample = " + str(step) + ", pred_per_sample = " + 
                 str(j) + " of " + str(pred_per_sample) + ", coeffs = " +
                 str(coeffs[-1][-1]) + ", accuracy = " + str(accuracy))
@@ -218,6 +219,35 @@ def add_covariance_feature(labels, new_msmts, history, coeffs):
                 ", accuracy = " + str(acc) + ", new_msmts = " + str(new_msmts))
             labels.append([acc, to_size(msmts, n_msmt, n_entries), 
                                 to_size(cs, n_entries, n_coeff)])
+
+
+
+def add_linearmodel_feature(labels, new_msmts, history, coeffs):
+    if n_coeff==n_msmt*3:
+        qs = [c[0:n_msmt] for c in coeffs] + [ones(n_msmt)]
+    else:
+        index = n_msmt * n_msmt
+        qs = [c[0:index] for c in coeffs] + [eye(n_msmt).flatten()]
+    history = list(filter(len, history))
+    for prev,msmt in zip(history, history[1:] + [new_msmts]):
+        for q in qs:
+            logger.info("prev,noise = " + str((prev, white_noise(q))))
+            f = lstsq(array(prev).T, array(msmt - white_noise(q)).T)
+            f = diag(f) if n_coeff == n_msmt * 3 else array(f).flatten()
+            cs = list(map(lambda i: concatenate((q, f, q)), range(n_entries)))
+            ekf, _ = build_ekf(cs[-1], history)
+            ekf.predict()
+            accs, acc = ekf_accuracies(ekf, new_msmts)
+            logger.info("coeffs,shape = " + str((cs[-1], shape(cs[-1]))) +
+                ", prev,msmt = " + str((prev, msmt)) +
+                ", accuracy = " + str(acc) + ", new_msmts = " + str(new_msmts))
+            labels.append([acc, to_size(msmts, n_msmt, n_entries), 
+                                to_size(cs, n_entries, n_coeff)])
+
+
+def white_noise(q):
+    n = symmetric(q) if n_coeff==n_msmt*3 else array(q).resize(n_msmt, n_msmt)
+    return multivariate_normal(zeros(n_msmt), n)
 
 
 def get_innovations(history):
