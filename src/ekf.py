@@ -102,8 +102,7 @@ def build_ekf(coeffs, z_data, linear_consts=None):
     return update_ekf(ekf, z_data)
 
 
-
-def update_ekf(ekf, z_data, R=None, m_c = None):
+def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None):
     (ekfs, start) = (ekf if isinstance(ekf, list) else [ekf], datetime.now())
     priors = [[] for i in ekfs]
     for i,z in zip(range(len(z_data)), z_data):
@@ -112,7 +111,7 @@ def update_ekf(ekf, z_data, R=None, m_c = None):
         h = lambda x: m_c[0]*x if m_c else x
         def hjacobian(x):
             m = m_c[0] if m_c else 1
-            return m * identity(len(x)) 
+            return Hj(x) if Hj else m * identity(len(x)) 
         for j,ekf in zip(range(len(ekfs)), ekfs):
             ekf = get_ekf(ekf)
             ekf.predict()
@@ -174,8 +173,9 @@ def test_ekf(generate_coeffs = test_coeffs):
 
 def test_zdata(generators, n):
     z_data = []
-    for v in (array(range(300))/30 if generators[n] in [math.exp, math.sin] else range(100)):
-        msmt = [generators[n](v) for m in range(n_msmt)]
+    g = generators[n]
+    for v in (array(range(300))/30 if g in [math.exp,math.sin] else range(100)):
+        msmt = [g(v) for m in range(n_msmt)]
         z_data.append(msmt)
     split = int(0.75 * len(z_data))
     return (z_data[0 : split], z_data[split : ])

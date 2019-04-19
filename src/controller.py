@@ -4,7 +4,7 @@ from ekf import *
 from lstm import *
 from client import *
 from time import sleep, time
-from numpy import subtract, concatenate, divide
+from numpy import subtract, concatenate, divide, nan_to_num
 import config
 import threading
 import io
@@ -20,7 +20,7 @@ monitor_msmts = {}
 ekfs = {}
 generators = get_generators()
 gid = len(generators)
-simulated = False
+simulated = True
 
 
 # Only the first n_msmt values are used, the rest are ignored by LSTM & EKF
@@ -104,7 +104,7 @@ def baseline_accuracy(model, sample_size, X, host):
 
 # Generates training labels by a bootstrap active-learning approach 
 def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
-    (labels, msmts, history, coeffs) = ([], [], [], [])
+    (msmts, history, coeffs) = ([], [], [])
     (accuracies, ekf_baseline) = ([], 
         baseline_accuracy(model, sample_size, X, host))
     for i in range(sample_size):
@@ -337,6 +337,55 @@ def run_test_convergence(genid):
     logger.info("done")
 
 
+def generate_traffic():
+    for endp in ["db-endpoint", "search-endpoint"]:
+        sleep(10)
+        f = io.StringIO()
+        with redirect_stdout(f):
+            test_client(endp)
+        pickledump("clientout.pickle", f.getvalue())
+        os_run("tar rvf pickles_" + endp + ".tar *.pickle")
+        os_run("rm *.pickle")
+
+
+
+def model_tracking_labels(ybase = zeros([n_msmt, n_entries]), ydelta = 1e-1):
+    def create_labels(model, X, labels=[], sample_size=10):
+        for i in range(sample_size):
+            y = ybase + i * ydelta
+            labels.append([0.0, to_size(y, n_msmt, n_entries), 
+                                     zeros([n_entries, n_lstm_out])])
+        return labels
+    return create_labels
+
+
+
+# Tracked (LQN) model output y.shape = [n_msmt], input p.shape = [n_lstm_out]
+# y is the (LQN) model output, p is the (LQN) model input (p -> y)
+# LSTM model inputs/outputs are the reverse of the (LQN) model (y -> p)
+def run_model_tracking_tests(y = zeros([n_msmt, n_entries])):
+    lstm_model, X, mse = tune_model(1, model_tracking_labels(y), tf_lqn_cost)
+    def createHj(model):
+        def hjacobian(y):
+            p = predict_coeffs(model, y, X)[-1]
+            dy = 0.001 * ones(len(y))
+            dys = [dy*i for i in range(len(p))]
+            dps = [predict_coeffs(model,y+i*dy,X)[-1]-p for i in range(len(y))]
+            return nan_to_num(array(dys) / (array(dps).T + 1e-9))
+        return hjacobian
+    ekf, _ = build_ekf([], [])
+    for msmt in solve_lqn_input([]):
+        ys = [msmt]
+        ekf, priors = update_ekf(ekf, ys, ekf.R, None, createHj(lstm_model))
+        error = sum(list(map(lambda x: pow(x[0][0]-x[1], 2), zip(priors, ys))))
+        logger.info("error, learn_threshold = " + str((error, learn_threshold)))
+        if error > learn_threshold:
+            logger.info("threshold crossed, learning new model parameters")
+            lstm_model,X,_ =tune_model(1, model_tracking_labels(y), tf_lqn_cost)
+    logger.info("done")
+
+
+
 def reset_globals():
     global test_msmt
     global msmts
@@ -406,17 +455,12 @@ if __name__ == "__main__":
         run_test()
     elif "--test-convergence" in sys.argv or "-tc" in sys.argv:
         run_test_convergence(next(sys.argv, ["--test-convergence", "-tc"]))
+    elif "--track-model" in sys.argv or "-tm" in sys.argv:
+        run_model_tracking_tests()
     else:
         run_monitors()
     if "--generate-traffic" in sys.argv or "-g" in sys.argv:
-        for endp in ["db-endpoint", "search-endpoint"]:
-            sleep(10)
-            f = io.StringIO()
-            with redirect_stdout(f):
-                test_client(endp)
-            pickledump("clientout.pickle", f.getvalue())
-            os_run("tar rvf pickles_" + endp + ".tar *.pickle")
-            os_run("rm *.pickle")
+        generate_traffic()
     print("Output in lstm_ekf.log...")
     for t in threads: 
         t.join()

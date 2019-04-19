@@ -11,17 +11,18 @@ from utils import *
 
 state_ids = []  # initialized in init_config_variables()
 n_proc = 3
-n_msmt = 8 * n_proc # Kalman z
+n_msmt = 7 #8 * n_proc # Kalman z
 dimx = n_msmt
 n_coeff = dimx * 2 + n_msmt # Kalman q, f, r
 n_covariance = 3
 n_entries = 3
-n_lstm_out = n_coeff
+n_lstm_out = n_msmt #n_coeff
 n_classes = int((5 - (-5)) / 1)
 n_features = n_classes
 # number of units in RNN cell
 n_hidden = 2
 learn_rate = 0.01
+learn_threshold = 10
 n_epochs = 10
 n_iterations = 500
 use_logistic_regression = False
@@ -93,6 +94,24 @@ def convert_lqn(msmts, n_comp):
     (m, c) = (model['m'], model['c']) if model else (1, 0)
     logger.debug("m,c,pca = " + str((m, c)))
     return array(dot(getpca(n_comp, msmts).T, m)).T[0]
+
+
+
+def solve_lqn_input(inputs, metric_ids = None):
+    to_lqn = lambda lst: reduce(lambda a,b: "["+str(a)+","+str(b)+"]", lst)
+    for inp in inputs:
+        for k,v in inp.items():
+            logger.info("lqn.input = " + str({k: v}))
+            os_run(get_config(['model-update-cmd'], [k, to_lqn([v, v])]))
+
+    out = os_run(get_config('model-solve-cmd'))
+    logger.info("metric_id="+str(metric_ids)+",rows="+str(len(out.split("\n"))))
+    metric = lambda r: [float(r[int(i)]) for i in (metric_ids if metric_ids and len(metric_ids) else range(len(r)))]
+    okrows = lambda rows: filter(lambda row: len(row) > 1, rows)
+    rows = [[float(t) for t in l.split(", ")] for l in okrows(out.split("\n")[1:])]
+    logger.info("rows = " + str(rows))
+    return rows
+
 
 
 def run_actions(cmds, pos):
@@ -252,7 +271,7 @@ def init_config_variables():
     global state_ids, dimx, n_coeff, n_lstm_out, tasks
     state_ids = find(get_config('lqn-hosts'), None)
     n_coeff = dimx * 2 + n_msmt # Kalman x
-    n_lstm_out = n_coeff
+    n_lstm_out = n_msmt #n_coeff
     tasks = get_config('lqn-tasks')
     logger.info("init_config_variables() done")
 
@@ -294,7 +313,7 @@ def test_linear():
     print("m,c,msmts.shape = " + str((m,c,shape(msmts))))
     print("pcs = " + str(getpca(len(lqnval), msmts)))
     print("dot(pcs,m) = " + str(dot(getpca(len(lqnval), msmts).T, m)))
-    print(get_config("login-"+"54.148.194.162") + " -t 'cmd'")
+    print(get_config("login-24.148.194.126") + " -t 'cmd'")
 
 
 def test_do_action():

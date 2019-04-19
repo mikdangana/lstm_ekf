@@ -4,9 +4,9 @@ variables:
         - 127.0.0.1
     cassandra-host: 
         - 127.0.0.1
-    application-host: 24.148.194.126
-    db-host: 54.220.22.90
-    search-host: 32.33.201.193
+    application-host: 54.148.194.163
+    db-host: 34.220.34.13
+    search-host: 52.13.165.59
     lqn-model: '/home/ubuntu/woodside/lstm_ekf/testbed.lqn'
     solr-url: 'https://127.0.0.1:8983/solr'
     cassandra-home: '/home/ubuntu/woodside/apache-cassandra-3.11.2'
@@ -43,6 +43,10 @@ login-32.33.201.193: "ssh -i 'workkeypair.pem' ubuntu@<search-host>"
 memory-cmd-24.148.194.126: "top -b -n 1 -a"
 
 activity-cmd: "python src/test_app.py"
+
+lqn-out: "system.lqn.out"
+
+lqn-range: [500,2]
 
 lqn-tasks:
         - nApps: 1

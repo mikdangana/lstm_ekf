@@ -11,12 +11,14 @@ from numpy import ones, dot, divide, subtract, concatenate
 from numpy.linalg import inv
 from functools import reduce
 from random import random, uniform
+from csv import reader
 from scipy.misc import derivative
 
 logger = logging.getLogger("Lstm")
 
 
 initialized = False
+lqn_tbl = []
 
 
 def RNN(x, weights, biases):
@@ -95,7 +97,7 @@ def weights_biases(base):
 
 
 # Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
-def tune_model(epochs = n_epochs, labelfn = test_labels):
+def tune_model(epochs = n_epochs, labelfn = test_labels, cost = None):
     #tf.reset_default_graph()
     X = tf.placeholder("float", [n_entries, n_msmt])
     Y = tf.placeholder("float", [n_entries, n_lstm_out])
@@ -106,7 +108,7 @@ def tune_model(epochs = n_epochs, labelfn = test_labels):
         else:
             weights, biases = weights_biases(best_label(None, X, labelfn))
             model = RNN(X, weights, biases) 
-            cost = tf.reduce_mean(tf.square(model - Y))
+            cost = cost(model,X) if cost else tf.reduce_mean(tf.square(model-Y))
             optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
         logger.debug("model = " + str(model))
         train_op = optimizer.minimize(cost)
@@ -127,6 +129,42 @@ def tune_logistic_model():
     cost = tf.reduce_mean(tf.losses.softmax_cross_entropy(labels, logits))
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
     return [X, Y, model, cost, optimizer]
+
+
+# Returns a LQN-based cost function
+def tf_lqn_cost(model, X):
+    load_lqn_table()
+    with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
+        def err(output, x):
+            print("err().output,x = " + str((output, x)))
+            return output * tf.zeros([n_entries, n_msmt]) + \
+                tf.slice(lqn_tbl, [lqn_row_id(output[-1]),0], [1,n_msmt]) -x[-1]
+        cost = tf.reduce_mean(tf.square(err(model, X)))
+    logger.debug("model = " + str(model) + ", cost = " + str(cost))
+    return cost
+
+
+def lqn_row_id(p):
+    rng = get_config("lqn-range") + [1.0]
+    row = 0;
+    for i in range(len(rng)):
+        row = row + tf.slice(p, [i], [1])[0] * rng[i]
+    logger.debug("p, rowid = " + str((p, row)))
+    return tf.cast(row, tf.int32)
+
+
+def load_lqn_table():
+    global lqn_tbl
+    if len(lqn_tbl):
+        return lqn_tbl
+    with open(get_config("lqn-out")) as f:
+        rdr = reader(f, delimiter=',')
+        i = 0
+        for row in rdr:
+            if i > 0:
+                lqn_tbl.append(tf.Variable([float32(s) for s in row]))
+            i = i + 1
+    return lqn_tbl
 
 
 def best_label(model, X, labelfn):
@@ -171,7 +209,7 @@ def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
         train(train_op, cost, X, Y, train_data, costs, epoch)
         logger.debug("Epoch = " + str(epoch) + ", train_data = " +
-            str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
+            str((train_data)) + ", test_data = " + str((test_data)))
         
     pickleconc("train_costs.pickle", costs)
     return test(model, X, Y, test_data)
