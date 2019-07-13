@@ -14,6 +14,7 @@ clean:
 	rm --force --recursive *.pickle
 	rm --force --recursive *.log
 	rm --force --recursive *.tar
+	rm --force --recursive *.train
 
 lint:
 	@echo "\nLinting...\n"
@@ -58,6 +59,10 @@ testconvergence: clean
 	python src/controller.py --test-convergence 3
 	python src/controller.py --test-convergence 4
 	python src/controller.py --test-convergence 5
+
+testmodeltrack: clean
+	@echo "\nTesting LSTM LQN Model Tracking...\n"
+	python src/controller.py --track-model
 
 run:
 	@echo "\nRunning Controller...\n"

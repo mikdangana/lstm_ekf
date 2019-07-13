@@ -4,9 +4,9 @@ variables:
         - 127.0.0.1
     cassandra-host: 
         - 127.0.0.1
-    application-host: 54.148.194.163
-    db-host: 34.220.34.13
-    search-host: 52.13.165.59
+    application-host: 127.0.0.1
+    db-host: 127.0.0.1
+    search-host: 127.0.0.1
     lqn-model: '/home/ubuntu/woodside/lstm_ekf/testbed.lqn'
     solr-url: 'https://127.0.0.1:8983/solr'
     cassandra-home: '/home/ubuntu/woodside/apache-cassandra-3.11.2'
@@ -32,21 +32,24 @@ search-endpoint: "http://<application-host>:8878/searchindex?q=*:*"
 
 db-endpoint: "http://<application-host>:8878/fetch?q="
 
-db-endpoint2: "http://34.218.238.140:8878/fetch?q="
+db-endpoint2: "http://<application-host>:8878/fetch?q="
 
-login-24.148.194.126: "ssh -i 'workkeypair.pem' ec2-user@<application-host>"
+login-<application-host>: "ssh -i 'workkeypair.pem' ec2-user@<application-host>"
 
-login-54.220.22.90: "ssh -i 'mykeypair1.pem' ec2-user@<db-host>"
+login-<db-host>: "ssh -i 'mykeypair1.pem' ec2-user@<db-host>"
 
-login-32.33.201.193: "ssh -i 'workkeypair.pem' ubuntu@<search-host>"
+login-<search-host>: "ssh -i 'workkeypair.pem' ubuntu@<search-host>"
 
-memory-cmd-24.148.194.126: "top -b -n 1 -a"
+memory-cmd-<application-host>: "top -b -n 1 -a"
 
 activity-cmd: "python src/test_app.py"
 
 lqn-out: "system.lqn.out"
 
-lqn-range: [500,2]
+lqn-range: [50,20]
+
+#lqn-noise-factor: [0.00002,0.00002,0.00002,0.00001,0.00002,0.000000002,0.00002]
+lqn-noise-factor: [2,0.2,0.2,0.1,0.2,0.00002,0.2]
 
 lqn-tasks:
         - nApps: 1
@@ -76,9 +79,9 @@ lqn-hosts:
 lqn-provision-actions:
         - "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
         -
-            - "ssh -i \"mykeypair1.pem\" ec2-user@54.220.22.90 -t \"sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' '<cassandra-home>/conf/cassandra.yaml'\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@54.220.22.90 -t \"<cassandra-home>/bin/stop\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@54.220.22.90 -t \"<cassandra-home>/bin/start\"" 
+            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' '<cassandra-home>/conf/cassandra.yaml'\""
+            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/stop\""
+            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/start\"" 
         # Figure out how to use JMX rather than cassandra stop/start
         - "curl http://<application-host>:8878/setdboptions?readtimeoutms=500000"
         - "curl http://<application-host>:8878/setdboptions?connsperhost=10000"
@@ -89,9 +92,9 @@ lqn-provision-actions:
 lqn-deprovision-actions:
         - "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
         -
-            - "ssh -i \"mykeypair1.pem\" ec2-user@54.220.22.90 -t \"sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' '<cassandra-home>/conf/cassandra.yaml'\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@54.220.22.90 -t \"<cassandra-home>/bin/stop\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@54.220.22.90 -t \"<cassandra-home>/bin/start\"" 
+            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' '<cassandra-home>/conf/cassandra.yaml'\""
+            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/stop\""
+            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/start\"" 
         # Figure out how to use JMX rather than cassandra stop/start
         - "curl http://<application-host>:8878/setdboptions?readtimeoutms=1000"
         - "curl http://<application-host>:8878/setdboptions?connsperhost=10"
@@ -99,6 +102,6 @@ lqn-deprovision-actions:
         - "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
 
 
-model-update-cmd: "sed -i 's/<param0>\\s*=\\s*\\[?[0-9,]\\]?*/<param0> = <param1>/' <lqn-model>"
+model-update-cmd: "sed -i 's/<param0>\\s*=\\s*\\[[0-9,\\. ]*\\]/<param0> = <param1>/' <lqn-model>"
 
 model-solve-cmd: "wine lqns <lqn-model>"

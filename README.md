@@ -35,6 +35,9 @@ The EKF is used here to track system performance parameters and tune resource an
 # Run controller convergence tests
 * make testconvergence
 
+# Run LSTM LQN model tracking tests
+* make testmodeltrack
+
 # Note
 * Read the Makefile for other tests and operations like cleaning, flushing, etc. Extend functionality as desired.
 * Pickle files are generated when tests and/or the controller are ran. You may use src/plot.py to plot these

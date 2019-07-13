@@ -102,13 +102,13 @@ def build_ekf(coeffs, z_data, linear_consts=None):
     return update_ekf(ekf, z_data)
 
 
-def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None):
+def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None, H=None):
     (ekfs, start) = (ekf if isinstance(ekf, list) else [ekf], datetime.now())
     priors = [[] for i in ekfs]
     for i,z in zip(range(len(z_data)), z_data):
         z = array(z)
         z.resize(n_msmt, 1)
-        h = lambda x: m_c[0]*x if m_c else x
+        h = lambda x: H(x) if H else m_c[0]*x if m_c else x
         def hjacobian(x):
             m = m_c[0] if m_c else 1
             return Hj(x) if Hj else m * identity(len(x)) 

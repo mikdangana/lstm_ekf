@@ -18,8 +18,8 @@ logger = logging.getLogger("Lstm")
 
 
 initialized = False
-lqn_tbl = []
-
+train_writer = None
+sess = None
 
 def RNN(x, weights, biases):
 
@@ -45,14 +45,17 @@ def RNN(x, weights, biases):
 
 def to_size(data, width, entries = n_entries):
     input = array(data)
-    input.resize(width, entries)
+    if width > 0:
+        input.resize(width, entries)
+    else:
+        input.resize(int(input.shape[1]/entries)*input.shape[0], entries)
+        logger.debug("data = " + str(data) + ", input = " + str(shape(input.T)))
     input = input.T
-    logger.debug("data = " + str(len(data)) + ", input = " + str(shape(input)))
     return input
 
 
 def repeat(x, n):
-    return list(map(lambda i: x, range(n)))
+    return array(list(map(lambda i: x, range(n))))
 
 
 # Generates test training labels
@@ -62,26 +65,36 @@ def test_labels(model, X = None, labels = [], sample_size = 5):
     symbols = [math.exp, math.sin] 
     for i in range(sample_size):
         for s in range(len(symbols)):
-            for k in range(10):
-                def measure(msmt):
-                    val = symbols[s](k+1) 
-                    return (1 - uniform(0.0, noise)) * val
-                labels.append([0.0, 
-                    repeat(list(map(measure, range(n_msmt))), n_entries), 
-                    repeat(repeat(s, n_lstm_out), n_entries)])
-            logger.debug("test_labels done with symbol " + str(symbols[s]))
-    logger.debug("test_labels.labels = " + str(labels))
+            def measure(msmt):
+                val = symbols[s](i+1) 
+                return (1 - uniform(0.0, noise)) * val
+            labels.append([0.0, 
+                repeat(list(map(measure, range(n_msmt))), n_entries), 
+                repeat(repeat(s, n_lstm_out), n_entries)])
+        logger.debug("test_labels done with symbol " + str(symbols[s]))
+    logger.debug("test_labels.labels = " + str(len(labels)))
     return labels
 
 
+def tf_run_reset(*args, **kwargs):
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
+    return sess.run(*args, **kwargs) 
+
+
 def tf_run(*args, **kwargs):
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        return sess.run(*args, **kwargs)
+    global train_writer
+    global sess
+    sess = sess if sess else tf.Session()
+    if not train_writer:
+        train_writer = tf.summary.FileWriter('lstm_ekf.train', sess.graph)
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
+    return sess.run(*args, **kwargs) 
 
 
-def weights_biases(base):
+def weights_biases(base, n_lstm_out):
     base = array(base) + 1e-9
     logger.info("bias = " + str(base))
     weights = {'out':tf.Variable(tf.ones([n_hidden, n_lstm_out]),name='w')}
@@ -97,17 +110,20 @@ def weights_biases(base):
 
 
 # Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
-def tune_model(epochs = n_epochs, labelfn = test_labels, cost = None):
+def tune_model(epochs = n_epochs, labelfn = test_labels, cost = None,
+    nout = n_lstm_out):
     #tf.reset_default_graph()
     X = tf.placeholder("float", [n_entries, n_msmt])
-    Y = tf.placeholder("float", [n_entries, n_lstm_out])
+    Y = tf.placeholder("float", [n_entries, nout])
+    logger.debug("X,Y = " + str((X,Y)))
 
     with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
         if use_logistic_regression:
             [X, Y, model, cost, optimizer] = tune_logistic_model()
         else:
-            weights, biases = weights_biases(best_label(None, X, labelfn))
+            weights, biases = weights_biases(best_label(None, X, labelfn), nout)
             model = RNN(X, weights, biases) 
+            #cost = tf.reduce_mean(tf.square(err(model,X) if cost else model-Y))
             cost = cost(model,X) if cost else tf.reduce_mean(tf.square(model-Y))
             optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
         logger.debug("model = " + str(model))
@@ -124,39 +140,46 @@ def tune_logistic_model():
     labels = tf.nn.softmax(Y)
     labels = tf.reshape(Y, [n_lstm_out, n_classes])
     logits = tf.reshape(model, [n_lstm_out, n_classes])
-    #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-     #   labels = labels, logits = model))
     cost = tf.reduce_mean(tf.losses.softmax_cross_entropy(labels, logits))
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
     return [X, Y, model, cost, optimizer]
 
 
+def err(output, x):
+    lqn_tbl = load_lqn_table()
+    rowid = lqn_row(output[-1])
+    return tf.cond(tf.logical_or(tf.less(rowid,0), 
+                   tf.greater_equal(rowid,len(lqn_tbl))),
+        lambda : 1e12, #tf.float32.max,
+        lambda : output * tf.zeros([n_entries, n_msmt]) + \
+            tf.slice(lqn_tbl, [rowid,0], [1,n_msmt]) - x[-1])
+
+
 # Returns a LQN-based cost function
 def tf_lqn_cost(model, X):
-    load_lqn_table()
     with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
-        def err(output, x):
-            print("err().output,x = " + str((output, x)))
-            return output * tf.zeros([n_entries, n_msmt]) + \
-                tf.slice(lqn_tbl, [lqn_row_id(output[-1]),0], [1,n_msmt]) -x[-1]
         cost = tf.reduce_mean(tf.square(err(model, X)))
+        with tf.name_scope("LSTM1"):
+            tf.summary.scalar('cost', cost)
+            #tf.summary.scalar('stddev', tf.sqrt(cost))
+            #tf.summary.scalar('max', tf.reduce_max(tf.square(err(model, X))))
+            #tf.summary.scalar('min', tf.reduce_min(tf.square(err(model, X))))
+            tf.summary.histogram('histogram', err(model, X))
     logger.debug("model = " + str(model) + ", cost = " + str(cost))
     return cost
 
 
-def lqn_row_id(p):
-    rng = get_config("lqn-range") + [1.0]
+def lqn_row(p):
+    rng = [1.0] + get_config("lqn-range") 
     row = 0;
     for i in range(len(rng)):
         row = row + tf.slice(p, [i], [1])[0] * rng[i]
-    logger.debug("p, rowid = " + str((p, row)))
+    logger.debug("p, rowid, rng = " + str((p, row, rng)))
     return tf.cast(row, tf.int32)
 
 
 def load_lqn_table():
-    global lqn_tbl
-    if len(lqn_tbl):
-        return lqn_tbl
+    lqn_tbl = []
     with open(get_config("lqn-out")) as f:
         rdr = reader(f, delimiter=',')
         i = 0
@@ -198,38 +221,48 @@ def set_lstm_initialized():
     initialized = True
 
 
-def train_and_test(model, X, Y, train_op, cost, n_epochs, labelfn=test_labels):
+def train_and_test(model, X, Y, train_op, cost, epochs, labelfn=test_labels):
     (test_data, costs, labels) = ([], [], [])
 
     # Training
-    for epoch in range(0, n_epochs):
-        labels = labelfn(model, X, labels)
+    for epoch in range(epochs):
+        labels = labelfn(model, X, [])
         batch_data = [feature_classes(l[1:]) for l in labels]
         train_data = batch_data[0 : int(len(batch_data)*0.75)]
         test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
-        train(train_op, cost, X, Y, train_data, costs, epoch)
-        logger.debug("Epoch = " + str(epoch) + ", train_data = " +
-            str((train_data)) + ", test_data = " + str((test_data)))
+        train(train_op, cost, X, Y, train_data, costs, epoch, model)
+        logger.debug("Epoch = " + str((epoch,epochs)) + ", train_data = " +
+            str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
+        pickleconc("train_costs.pickle", costs[-1:])
+        if iscostconverged(costs):
+            logger.debug("converged, window = " + str(costs[-5:]))
+            break
         
-    pickleconc("train_costs.pickle", costs)
     return test(model, X, Y, test_data)
 
 
 
-def train(train_op, cost, X, Y, train_data, costs, epoch):
+def train(train_op, cost, X, Y, train_data, costs, epoch, model):
+    tf.summary.scalar('cost', cost)
     for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
         # Remember 'cost' contains the model
-        _, total_cost = tf_run([train_op, cost], feed_dict =
+        ops = [train_op, cost, tf.summary.merge_all(), model] 
+        logger.debug("batchx,batchy = " + str((batch_x, batch_y)))
+        _, total_cost, summa, output = tf_run(ops, feed_dict = 
             {X: batch_x if use_logistic_regression else to_size(batch_x, n_msmt,
                 n_entries), 
              Y: batch_y if use_logistic_regression else to_size(batch_y, 
                 n_lstm_out, n_entries)})
-        logger.debug("batchx = " + str(shape(batch_x)) +  ", batchy = " + 
-           str(shape(batch_y)) + ", cost = " + str(total_cost) + 
+        train_writer.add_summary(summa, i)
+        logger.debug("batchx = " + str(shape(batch_x)) + ", batchy = " + 
+           str(shape(batch_y)) + ", cost,out = " + str((total_cost,output[-1]))+
            ", batch " + str(i+1) + " of " + str(len(train_data)) + 
            ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
         set_lstm_initialized()
         costs.append(total_cost)
+        if iscostconverged(costs):
+            logger.debug("converged, window = " + str(costs[-5:]))
+            break
 
 
 def test(model, X, Y, test_data):
@@ -237,19 +270,20 @@ def test(model, X, Y, test_data):
     if use_logistic_regression:
         test_logistic(model, X, Y, test_data)
     else:
-        test_x = to_size([t[0] for t in test_data], n_msmt, n_entries)
-        test_y = to_size([t[1] for t in test_data], n_lstm_out, n_entries)
-        labels = tf.reshape(Y, [n_lstm_out, n_entries])
-        preds = tf.reshape(model, [n_lstm_out, n_entries])
-        tf_mse = tf.losses.mean_squared_error(labels, preds)
-        tf_cost = tf.reduce_mean(tf.square(model - Y))
-        [mse, cost, output] = tf_run([tf_mse, tf_cost, model],
-            feed_dict={X:test_x, Y:test_y})
-        logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + 
-            ", X = " + str(X) + ", Y = " + str(Y) +
-            ", (output,test_y) = " + str(list(zip(output, test_y))))
-    logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost)) 
-    pickleadd("test_costs.pickle", mse)
+        for test_x,test_y in test_data:
+            test_x = to_size(test_x, n_msmt, n_entries)
+            test_y = to_size(test_y, -1, n_entries)
+            labels = tf.reshape(Y, [-1, n_entries])
+            preds = tf.reshape(model, [-1, n_entries])
+            tf_mse = tf.losses.mean_squared_error(labels, preds)
+            tf_cost = tf.reduce_mean(tf.square(model - Y))
+            [mse, cost, output] = tf_run([tf_mse, tf_cost, model],
+                feed_dict={X:test_x, Y:test_y})
+            logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + 
+                ", X = " + str(X) + ", Y = " + str(Y) +
+                ", (output,test_y) = " + str(list(zip(output, test_y))))
+        logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost)) 
+        pickleadd("test_costs.pickle", mse)
     return [model, X, mse]
 
 
@@ -277,5 +311,5 @@ def test_logistic(model, X, Y, test_data):
 
 
 if __name__ == "__main__":
-    tune_model(3)
+    tune_model(1)
     logger.debug("done")

@@ -14,16 +14,17 @@ n_proc = 3
 n_msmt = 7 #8 * n_proc # Kalman z
 dimx = n_msmt
 n_coeff = dimx * 2 + n_msmt # Kalman q, f, r
+n_entries = 1
 n_covariance = 3
-n_entries = 3
-n_lstm_out = n_msmt #n_coeff
+n_lstm_out = 7 #n_coeff
+n_lqn_out = 7
 n_classes = int((5 - (-5)) / 1)
 n_features = n_classes
 # number of units in RNN cell
 n_hidden = 2
 learn_rate = 0.01
-learn_threshold = 10
-n_epochs = 10
+learn_threshold = 1e-4
+n_epochs = 8
 n_iterations = 500
 use_logistic_regression = False
 config = None
@@ -53,7 +54,7 @@ def do_action(x_prior, host=None):
         name = [k for k,v in tasks[i].items()][0]
         logger.info("prior.ids,pred.i,ts ="+str((ids,pred[i+ids[0]],threshold)))
         if (pred[i + ids[0]] >= threshold): 
-            res_info = solve_lqn(i + ids[0])
+            res_info = solve_lqn(i + ids[0]) # search for LQN input value
             for j,res in zip(range(len(tasks)), res_info[0:len(tasks)]):
                 resname = [k for k,v in tasks[j].items()][0]
                 logger.info("Resource task,value,i = " + str((tasks[j],res,i)))
@@ -71,7 +72,7 @@ def solve_lqn(metric_id):
     for task in tasks:
         for k,v in task.items():
             logger.info("lqn.input = " + str({k: v}))
-            os_run(get_config(['model-update-cmd'], [k, to_lqn([v-1,v+1])]))
+            os_run(get_config(['model-update-cmd'], [k, to_lqn([v,v+1])]))
 
     out = os_run(get_config('model-solve-cmd'))
     logger.info("metric_id="+str(metric_id)+", rows="+str(len(out.split("\n"))))
@@ -97,20 +98,24 @@ def convert_lqn(msmts, n_comp):
 
 
 
-def solve_lqn_input(inputs, metric_ids = None):
-    to_lqn = lambda lst: reduce(lambda a,b: "["+str(a)+","+str(b)+"]", lst)
+def solve_lqn_input(inputs, metids = None):
+    to_lqn = lambda a: str(a) if isinstance(a, list) else "["+str(a)+"]"
     for inp in inputs:
         for k,v in inp.items():
             logger.info("lqn.input = " + str({k: v}))
-            os_run(get_config(['model-update-cmd'], [k, to_lqn([v, v])]))
+            os_run(get_config(['model-update-cmd'], [k, to_lqn(v)]))
 
-    out = os_run(get_config('model-solve-cmd'))
-    logger.info("metric_id="+str(metric_ids)+",rows="+str(len(out.split("\n"))))
-    metric = lambda r: [float(r[int(i)]) for i in (metric_ids if metric_ids and len(metric_ids) else range(len(r)))]
-    okrows = lambda rows: filter(lambda row: len(row) > 1, rows)
-    rows = [[float(t) for t in l.split(", ")] for l in okrows(out.split("\n")[1:])]
-    logger.info("rows = " + str(rows))
-    return rows
+    try:
+        out = os_run(get_config('model-solve-cmd'))
+        out = out.split("\n")
+        logger.info("metric_id = " + str(metids) + ", rows = " + str(len(out)))
+        #metric = lambda r: [float(r[int(i)]) for i in (metids if metids and len(metids) else range(len(r)))]
+        okrows = lambda rows: filter(lambda row: len(row) > 1, rows)
+        rows = [[float(t) for t in l.split(", ")] for l in okrows(out[1:])]
+        logger.info("rows = " + str(rows))
+        return rows
+    except:
+        return [zeros(n_lqn_out)]
 
 
 
@@ -270,8 +275,8 @@ def process_args():
 def init_config_variables():
     global state_ids, dimx, n_coeff, n_lstm_out, tasks
     state_ids = find(get_config('lqn-hosts'), None)
-    n_coeff = dimx * 2 + n_msmt # Kalman x
-    n_lstm_out = n_msmt #n_coeff
+    #n_coeff = dimx * 2 + n_msmt # Kalman x
+    #n_lstm_out = n_msmt #n_coeff
     tasks = get_config('lqn-tasks')
     logger.info("init_config_variables() done")
 
@@ -329,4 +334,5 @@ if __name__ == "__main__":
     test_lqn_hosts()
     run_async("activity-cmd")
     test_linear()
+    print(str(solve_lqn_input([{'nUsers': 1, 'nWebServers': 2, 'nDb': 1, 'nSearch': 1}])))
     #close_asyncs()

@@ -32,8 +32,10 @@ def os_run(cmd):
 
     try:
         logger.debug("Running cmd " + str(cmd) + ", inst = " + str((isinstance(cmd, list), isinstance(cmd, type("")))))
-        res = os.popen(cmd + " 2>>lstm_ekf.log").read()
-        logger.debug("Ran cmd,out = " + str((cmd, len(res))))
+        proc = os.popen(cmd + " 2>>lstm_ekf.log")
+        res = proc.read()
+        proc.close()
+        logger.debug("Ran cmd,out,proc = " + str((cmd, len(res), proc)))
     except:
         ex = traceback.format_exc()
         logger.error("Error running '"+ str(cmd) +"': " + str(ex))
@@ -178,6 +180,10 @@ def solve_linear(x, ys, m_c = None):
 
 def rotate_right(m):
     return transpose(concatenate([transpose(m[:,1:]), transpose(m[:,0:1])]))
+
+
+def iscostconverged(costs, window = 5, tolerance = 30):
+    return len(costs)>window and max(costs[-window:]) < tolerance
 
 
 def isconverged(data, confidence=0.95):

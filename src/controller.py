@@ -9,6 +9,7 @@ import config
 import threading
 import io
 from contextlib import redirect_stdout
+from statistics import mode
 
 
 test_msmt = []
@@ -73,20 +74,29 @@ def predict_coeffs(model, newdata, X, randomize=False):
     elif isinstance(model, list):
         lout = []
         for lstm in model:
-            lout.append(tf_run(lstm, feed_dict={X:input}))
+            lout.append(tf_run_reset(lstm, feed_dict={X:input}))
     else:
-        output = tf_run(model, feed_dict={X:input})
+        output=vote([tf_run_reset(model,feed_dict={X:input}) for i in range(1)])
     logger.debug("Coeff output = " + str(shape(output)) + ", predict = " + 
         str(output[-1]) + ", input = " + str(shape(newdata)))
     return output
 
 
+def vote(outputs):
+    lasts = [out[-1][0] for out in outputs]
+    logger.debug("lasts = " + str(lasts))
+    try:
+        i = lasts.index(mode(lasts))
+    except:
+        i = 0;
+    return outputs[i]
+
 
 # Creates a baseline coeff/EKF and tracks its performance over a sample history
-def baseline_accuracy(model, sample_size, X, host):
+def baseline_accuracy(model, sample_size, X, host, sim_msmts):
     (baseline, ekf, msmts, history) = ([], None, [], [])
     for i in range(0, sample_size):
-        new_msmts = measurements(host)
+        new_msmts = sim_msmts[i] if len(sim_msmts) else measurements(host)
         logger.info("i = " + str(i) + ", new_msmts = " + str(shape(new_msmts)))
         if len(msmts):
             if not ekf:
@@ -101,14 +111,20 @@ def baseline_accuracy(model, sample_size, X, host):
     return baseline
 
 
+def bootstrap_fn(sim_msmts, samples=10):
+    def bootstrap(model, X, labels=[], sample_size=samples,pre="boot", host=""):
+        return bootstrap_labels(model,X,labels,sample_size,pre,host,sim_msmts)
+    return bootstrap
+
 
 # Generates training labels by a bootstrap active-learning approach 
-def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
+def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host="",
+    sim_msmts = []):
     (msmts, history, coeffs) = ([], [], [])
-    (accuracies, ekf_baseline) = ([], 
-        baseline_accuracy(model, sample_size, X, host))
+    (accuracies, ekf_baseline) = ([],  
+        baseline_accuracy(model, sample_size, X, host, sim_msmts))
     for i in range(sample_size):
-        new_msmts = measurements(host)
+        new_msmts = sim_msmts[i] if len(sim_msmts) else measurements(host)
         history.append(msmts)
         add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, i)
         msmts = new_msmts
@@ -126,7 +142,7 @@ def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host=""):
 
 
 def add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, step):
-    (action_interval, pred_per_sample, msmts) = (40, 10, history[-1])
+    (action_interval, pred_per_sample, msmts) = (40, 1, history[-1])
     if len(msmts):
         for j in range(pred_per_sample):
             coeffs.append(predict_coeffs(model, msmts, X))
@@ -348,41 +364,103 @@ def generate_traffic():
         os_run("rm *.pickle")
 
 
+def toLqn(v):
+    for i in range(4):
+        v[i] = round(v[i])
+    return [{'nUsers': v[0], 'nWebServers': v[1], 'nDb': v[2], 'nSearch': v[3]}]
 
-def model_tracking_labels(ybase = zeros([n_msmt, n_entries]), ydelta = 1e-1):
+
+def model_track_labels(rowid, ybase = None, ydelta = 0.5):
+    rng = get_config('lqn-range')
+    ybase = ybase if ybase else [int(random()*0.5*i) for i in rng]
+    ybase.extend(zeros(n_lstm_out-len(ybase)))
+    y = zeros([n_entries, n_lstm_out]) + to_size(ybase, n_lstm_out)
+    rows = to_size(solve_lqn_input(toLqn(ybase))[rowid], n_msmt)
+    logger.debug("nUsers,y,rows = " + str((ybase, y, rows)))
     def create_labels(model, X, labels=[], sample_size=10):
         for i in range(sample_size):
-            y = ybase + i * ydelta
-            labels.append([0.0, to_size(y, n_msmt, n_entries), 
-                                     zeros([n_entries, n_lstm_out])])
+            labels.append([0.0, rows + random()*ydelta, y])
         return labels
     return create_labels
 
+
+def model_tracking_data(noise = array(get_config('lqn-noise-factor'))):
+    rows = solve_lqn_input([
+        {'nUsers':[10,31],'nWebServers':[1],'nDb':[1],'nSearch':[1]}])
+    raw = [rows[0] for i in range(1200)] 
+    raw.extend([rows[1] for i in range(800)])
+    data = [r + random()*noise for r in raw] 
+    return (data, raw, data[0:int(len(data)*0.1)])
+
+
+def createHj(model, X, xinit):
+    dx = 0.001 * array([ones(len(xinit))]).T
+    p = array([ones(len(xinit))]).T * (18 if not model else 16)
+    [p,p1] = [p,p+dx] #[predict_coeffs(model,yinit+i*dx,X)[-1] for i in [0,len(xinit)-1]]
+    def hjacobian(x):
+        (mx, mp) = (x[0], mean(p))
+        logger.info("hjacobian.predicting coeffs x,dx,mx,mp="+str((x,dx,mx,mp)))
+        (x0, p0) = (x,p) if model and mx>mp or not model and mx<mp else (0,0)
+        dxs = array([x0 + dx*i for i in range(len(p))]).T
+        dps = array([p0 + (p1 - p)/(len(x)*(i+1)) for i in range(len(x))]).T
+        Hj = nan_to_num((dps + 1e-9) / (dxs + 1e-9))[0]
+        logger.info("hjacobian.dxs,dps,Hj = " + str((shape(dxs),shape(dps),Hj)))
+        return Hj
+    return hjacobian
+
+
+def createHx(model, X, y):
+    p = array([zeros(n_msmt)]).T #array([predict_coeffs(model,y,X)[-1]]).T
+    logger.info("p,y = " + str((p,y)))
+    def H(x):
+        return x + 10 #Hlqn(x)
+    return None #H
+
+
+def Hlqn(x):
+    rows = solve_lqn_input(toLqn(list(x.T[0])))
+    logger.debug("x,rows[0] = " + str((x, array([rows[0]]).T)))
+    return array([rows[0]]).T
 
 
 # Tracked (LQN) model output y.shape = [n_msmt], input p.shape = [n_lstm_out]
 # y is the (LQN) model output, p is the (LQN) model input (p -> y)
 # LSTM model inputs/outputs are the reverse of the (LQN) model (y -> p)
-def run_model_tracking_tests(y = zeros([n_msmt, n_entries])):
-    lstm_model, X, mse = tune_model(1, model_tracking_labels(y), tf_lqn_cost)
-    def createHj(model):
-        def hjacobian(y):
-            p = predict_coeffs(model, y, X)[-1]
-            dy = 0.001 * ones(len(y))
-            dys = [dy*i for i in range(len(p))]
-            dps = [predict_coeffs(model,y+i*dy,X)[-1]-p for i in range(len(y))]
-            return nan_to_num(array(dys) / (array(dps).T + 1e-9))
-        return hjacobian
-    ekf, _ = build_ekf([], [])
-    for msmt in solve_lqn_input([]):
-        ys = [msmt]
-        ekf, priors = update_ekf(ekf, ys, ekf.R, None, createHj(lstm_model))
-        error = sum(list(map(lambda x: pow(x[0][0]-x[1], 2), zip(priors, ys))))
-        logger.info("error, learn_threshold = " + str((error, learn_threshold)))
-        if error > learn_threshold:
-            logger.info("threshold crossed, learning new model parameters")
-            lstm_model,X,_ =tune_model(1, model_tracking_labels(y), tf_lqn_cost)
+def run_model_tracking_tests(y = None):
+    (msmts,raw, tmsmts) = model_tracking_data()
+    avg = array([mean(c) for c in array(tmsmts).T])
+    h_model,X,_ = (None, None, None) #tune_model(n_epochs,model_track_labels(0),tf_lqn_cost)
+    (Hj, Hx, ys) = (createHj(h_model, X, avg), createHx(h_model, X, avg), [])
+    ((ekf, _), basic_ekf) = (build_lstm_ekf(tmsmts), build_ekf([], tmsmts))
+    pickleconc("modeltrack_msmts_denoise.pickle", raw[len(tmsmts):])
+    for i,msmt in zip(range(int(len(msmts))), msmts[len(tmsmts):]):
+        ys.append(msmt)
+        ekf, priors = update_ekf(ekf, ys[-1:], ekf.R, None, Hj, Hx)
+        basic_ekf, basic_priors = update_ekf(basic_ekf, ys[-1:],None,None, None)
+        logger.info("updated ekf, i,ys,priors = " + str((i,ys[-1],priors)))
+        error =sum(list(map(lambda x: abs(x[0][0].T-x[1]),zip(priors,ys[-1:]))))
+        wavg = array([mean(c) for c in array(ys[-50:]).T])
+        pickleadd("modeltrack_msmts.pickle", msmt)
+        pickleadd("modeltrack_priors.pickle", priors[0][0][0])
+        pickleadd("modeltrack_basic_priors.pickle", basic_priors[0][0][0])
+        pickleadd("modeltrack_errors.pickle", error)
+        pickleadd("modeltrack_avg.pickle", wavg)
+        logger.info("i,avg,wavg,learn_threshold,diff=" +str((i,mean(avg),mean(wavg),learn_threshold,abs(mean(avg)-mean(wavg)))))
+        if len(msmts)-len(tmsmts)-1000 == i: #abs(mean(wavg) - mean(avg)) > learn_threshold:
+            avg = wavg
+            logger.info("moving avg changed, learning new model parameters")
+            #h_model,X,_ =tune_model(n_epochs,model_track_labels(1),tf_lqn_cost)
+            h_model = 1
+            Hj = createHj(h_model, X, avg)
     logger.info("done")
+
+
+
+def build_lstm_ekf(msmts):
+    (cost, nout) = (None, n_coeff)
+    #qf_model,X,lstm_accuracy = tune_model(1, bootstrap_fn(msmts,5), cost, nout)
+    coeffs = [[]] #predict_coeffs(qf_model, msmts, X) 
+    return build_ekf(coeffs[-1], msmts)
 
 
 
@@ -464,4 +542,4 @@ if __name__ == "__main__":
     print("Output in lstm_ekf.log...")
     for t in threads: 
         t.join()
-    print("Controller done : " + str(time() - start) + "s")
+    logger.info("Controller done : " + str(time() - start) + "s")
