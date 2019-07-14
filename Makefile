@@ -62,7 +62,7 @@ testconvergence: clean
 
 testmodeltrack: clean
 	@echo "\nTesting LSTM LQN Model Tracking...\n"
-	python src/controller.py --track-model
+	python src/controller.py --track-model --n_msmt 7 --n_lstm_out 7 --n_entries 1
 
 run:
 	@echo "\nRunning Controller...\n"

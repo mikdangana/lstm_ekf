@@ -7,7 +7,7 @@ from time import sleep, time
 from numpy import subtract, concatenate, divide, nan_to_num
 import config
 import threading
-import io
+import io, importlib
 from contextlib import redirect_stdout
 from statistics import mode
 
@@ -455,6 +455,15 @@ def run_model_tracking_tests(y = None):
     logger.info("done")
 
 
+def configure_model_tracking():
+    global n_msmt
+    global dimx
+    global n_entries
+    global n_lstm_out
+    n_msmt = 7 #8 * n_proc # Kalman z
+    n_entries = 1
+    n_lstm_out = 7 #n_coeff
+
 
 def build_lstm_ekf(msmts):
     (cost, nout) = (None, n_coeff)
@@ -528,7 +537,6 @@ def tune_host(host):
 if __name__ == "__main__":
     start = time()
     process_args()
-    from config import *
     if "--test" in sys.argv or "-t" in sys.argv:
         run_test()
     elif "--test-convergence" in sys.argv or "-tc" in sys.argv:
@@ -543,3 +551,5 @@ if __name__ == "__main__":
     for t in threads: 
         t.join()
     logger.info("Controller done : " + str(time() - start) + "s")
+
+

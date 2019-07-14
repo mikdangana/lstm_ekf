@@ -11,12 +11,12 @@ from utils import *
 
 state_ids = []  # initialized in init_config_variables()
 n_proc = 3
-n_msmt = 7 #8 * n_proc # Kalman z
+n_msmt = 24 # 8 * n_proc # Kalman z
 dimx = n_msmt
 n_coeff = dimx * 2 + n_msmt # Kalman q, f, r
-n_entries = 1
+n_entries = 3
 n_covariance = 3
-n_lstm_out = 7 #n_coeff
+n_lstm_out = n_coeff
 n_lqn_out = 7
 n_classes = int((5 - (-5)) / 1)
 n_features = n_classes
@@ -38,8 +38,47 @@ n_user_rate_s = 0.0000001
 n_users = 100000
 active_monitor = True
 
-
 logger = logging.getLogger("Config")
+
+    
+
+def process_args():
+    global n_coeff
+    global n_epochs
+    global n_iterations
+    global n_msmt
+    global n_lstm_out
+    global n_entries
+    global active_monitor
+    global dimx
+    global n_coeff
+    args = sys.argv[1:]
+    for i,j in zip(args, args[1:] + ['']):
+        if i == "--twod" or i == "-2d":
+            n_coeff = n_msmt * n_msmt * 3
+            logger.info("set n_coeff to " + str(n_coeff))
+        elif i == "--epochs" or i == "-e":
+            n_epochs = int(j)
+            logger.info("set n_epochs to " + j)
+        elif i == "--iterations" or i == "-i":
+            n_iterations = int(j)
+            logger.info("set test iterations to " + j)
+        elif i == "--passive" or i == "-p":
+            active_monitor = False
+        elif i == "--n_msmt":
+            n_msmt = int(j)
+            dimx = n_msmt
+            n_coeff = dimx * 2 + n_msmt # Kalman q, f, r
+        elif i == "--n_lstm_out":
+            n_lstm_out = int(j)
+        elif i == "--n_entries":
+            n_entries = int(j)
+        elif i == "--help" or i == "-h":
+            usage()
+            exit()
+
+
+process_args()
 
 
 def do_action(x_prior, host=None):
@@ -179,9 +218,13 @@ def load_config():
 def get_config(path, params = []):
     if not config:
         load_config()
-    val = get(config, path)
+    val = get(config, set_variables(path))
     for (i, param) in zip(range(0, len(params)), params):
         val = re.sub(r'<param' + str(i) + '>', str(param), str(val))
+    return set_variables(val)
+
+
+def set_variables(val):
     if 'variables' in config:
         for k, v in config['variables'].items():
             k = "<" + str(k) + ">"
@@ -246,30 +289,6 @@ def usage():
         "-2d, --twod             Set the 2d (vs diagonal) n_coeff value\n" +
         "-e, --epochs      n     Set number of epochs\n" +
         "-i, --iterations  n     Set the number of iterations")
-    
-
-def process_args():
-    global n_coeff
-    global n_epochs
-    global n_iterations
-    global active_monitor
-    args = sys.argv[1:]
-    for i,j in zip(args, args[1:] + ['']):
-        if i == "--twod" or i == "-2d":
-            n_coeff = n_msmt * n_msmt * 3
-            logger.info("set n_coeff to " + str(n_coeff))
-        elif i == "--epochs" or i == "-e":
-            n_epochs = int(j)
-            logger.info("set n_epochs to " + j)
-        elif i == "--iterations" or i == "-i":
-            n_iterations = int(j)
-            logger.info("set test iterations to " + j)
-        elif i == "--passive" or i == "-p":
-            active_monitor = False
-        elif i == "--help" or i == "-h":
-            usage()
-            exit()
-
 
 
 def init_config_variables():
