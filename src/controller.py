@@ -501,7 +501,7 @@ def create_monitor(host):
         os_run("mv measurements.pickle " + host + "_measurements.pickle")
         os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
         os_run("rm " + host + "*.pickle")
-        logger.info("Monitor done on host " + host)
+        logger.info("Monitor done on host " + host + ": pickles_"+host+".tar")
     return monitor_loop
 
 
@@ -536,7 +536,6 @@ def tune_host(host):
 
 if __name__ == "__main__":
     start = time()
-    process_args()
     if "--test" in sys.argv or "-t" in sys.argv:
         run_test()
     elif "--test-convergence" in sys.argv or "-tc" in sys.argv:

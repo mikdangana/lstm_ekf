@@ -38,8 +38,8 @@ n_user_rate_s = 0.0000001
 n_users = 100000
 active_monitor = True
 
-logger = logging.getLogger("Config")
 
+logger = logging.getLogger("Config")
     
 
 def process_args():

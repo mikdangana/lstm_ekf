@@ -69,8 +69,8 @@ def test_labels(model, X = None, labels = [], sample_size = 5):
                 val = symbols[s](i+1) 
                 return (1 - uniform(0.0, noise)) * val
             labels.append([0.0, 
-                repeat(list(map(measure, range(n_msmt))), n_entries), 
-                repeat(repeat(s, n_lstm_out), n_entries)])
+                repeat(array(list(map(measure, range(n_msmt)))), n_entries), 
+                repeat(repeat(s, n_entries), n_coeff)])
         logger.debug("test_labels done with symbol " + str(symbols[s]))
     logger.debug("test_labels.labels = " + str(len(labels)))
     return labels
@@ -313,3 +313,4 @@ def test_logistic(model, X, Y, test_data):
 if __name__ == "__main__":
     tune_model(1)
     logger.debug("done")
+    print("Output in lstm_ekf.log")

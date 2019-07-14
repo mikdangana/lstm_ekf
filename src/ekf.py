@@ -183,3 +183,4 @@ def test_zdata(generators, n):
 
 if __name__ == "__main__":
     test_ekf()
+    print("Output in lstm_ekf.log")
