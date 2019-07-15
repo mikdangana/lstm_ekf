@@ -18,14 +18,14 @@ def fetch(session, index, cmd_cfg):
             print("FAILURE::{0}".format(base_url))
 
         elapsed = default_timer() - START_TIME
-        time_completed_at = "{:5.6f}s".format(elapsed)
-        print("{0:<30} {1:>20}".format(index, time_completed_at))
+        time_elapsed = "{:5.6f}s".format(elapsed)
+        print("{0:<30} {1:>20}".format(index, time_elapsed))
 
         return data
 
 
 async def get_data_asynchronous(cmd_cfg):
-    print("{0:<30} {1:>20}".format("Client", "Completed at"))
+    print("{0:<30} {1:>20}".format("Client", "Elapsed"))
     with ThreadPoolExecutor(max_workers=10) as executor:
         with requests.Session() as session:
             # Set any session parameters here before calling `fetch`

@@ -35,7 +35,7 @@ config = None
 norms = [1000, 20, 20, 1000000000, 1000000000, 10000, 1, 1]
 procs = []
 n_user_rate_s = 0.0000001
-n_users = 100000
+n_users = 10
 active_monitor = True
 
 

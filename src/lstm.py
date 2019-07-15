@@ -17,31 +17,6 @@ from scipy.misc import derivative
 logger = logging.getLogger("Lstm")
 
 
-initialized = False
-train_writer = None
-sess = None
-
-def RNN(x, weights, biases):
-
-    if use_logistic_regression:
-        cell = tf.nn.rnn_cell.LSTMCell(n_features, activation=tf.nn.relu)
-        layers = [cell for layer in range(n_msmt)]
-        multi_cell = tf.contrib.rnn.MultiRNNCell(layers)
-        logger.info("RNN.cell,multi_cell,x = " + str((cell, multi_cell,x)))
-        outputs,states = tf.nn.dynamic_rnn(cell,x,dtype=tf.float32)
-        model = tf.matmul(outputs, weights) + biases
-    else:
-        cell = tf.nn.rnn_cell.LSTMCell(n_hidden, activation=tf.nn.relu)
-        logger.info("RNN.cell = " + str(cell))
-        outputs,_ = tf.contrib.rnn.static_rnn(cell,inputs=[x],dtype=tf.float32)
-        model = tf.matmul(outputs[-1], weights['out']) + biases['out']
-    logger.info("x = " + str(x) + ", outputs = " + str(outputs) + ", weights="+
-        str(weights) + ", biases = " + str(biases) + "= model = " + str(model))
-
-    # there are n_entries outputs but
-    # we only want the last output
-    return model
-
 
 def to_size(data, width, entries = n_entries):
     input = array(data)
@@ -75,25 +50,6 @@ def test_labels(model, X = None, labels = [], sample_size = 5):
     logger.debug("test_labels.labels = " + str(len(labels)))
     return labels
 
-
-def tf_run_reset(*args, **kwargs):
-    sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
-    sess.run(tf.local_variables_initializer())
-    return sess.run(*args, **kwargs) 
-
-
-def tf_run(*args, **kwargs):
-    global train_writer
-    global sess
-    sess = sess if sess else tf.Session()
-    if not train_writer:
-        train_writer = tf.summary.FileWriter('lstm_ekf.train', sess.graph)
-    sess.run(tf.global_variables_initializer())
-    sess.run(tf.local_variables_initializer())
-    return sess.run(*args, **kwargs) 
-
-
 def weights_biases(base, n_lstm_out):
     base = array(base) + 1e-9
     logger.info("bias = " + str(base))
@@ -107,42 +63,6 @@ def weights_biases(base, n_lstm_out):
         bias = array([concatenate((i,i,i)) for x in range(n_entries)])
         biases = {'out': tf.convert_to_tensor(bias, name='b', dtype=tf.float32)}
     return [weights, biases]
-
-
-# Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
-def tune_model(epochs = n_epochs, labelfn = test_labels, cost = None,
-    nout = n_lstm_out):
-    #tf.reset_default_graph()
-    X = tf.placeholder("float", [n_entries, n_msmt])
-    Y = tf.placeholder("float", [n_entries, nout])
-    logger.debug("X,Y = " + str((X,Y)))
-
-    with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
-        if use_logistic_regression:
-            [X, Y, model, cost, optimizer] = tune_logistic_model()
-        else:
-            weights, biases = weights_biases(best_label(None, X, labelfn), nout)
-            model = RNN(X, weights, biases) 
-            #cost = tf.reduce_mean(tf.square(err(model,X) if cost else model-Y))
-            cost = cost(model,X) if cost else tf.reduce_mean(tf.square(model-Y))
-            optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
-        logger.debug("model = " + str(model))
-        train_op = optimizer.minimize(cost)
-    return train_and_test(model, X, Y, train_op, cost, epochs, labelfn)
-
-
-def tune_logistic_model():
-    X = tf.placeholder(tf.float32, [n_entries, n_msmt, n_features])
-    Y = tf.placeholder(tf.float32, [1, n_lstm_out, n_classes])
-    weights = tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
-    biases = tf.Variable(tf.ones([n_entries, n_msmt, n_classes])*1e-2)
-    model = RNN(X, weights, biases)
-    labels = tf.nn.softmax(Y)
-    labels = tf.reshape(Y, [n_lstm_out, n_classes])
-    logits = tf.reshape(model, [n_lstm_out, n_classes])
-    cost = tf.reduce_mean(tf.losses.softmax_cross_entropy(labels, logits))
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
-    return [X, Y, model, cost, optimizer]
 
 
 def err(output, x):
@@ -211,106 +131,195 @@ def feature_classes(batch):
 
 
 
-def lstm_initialized():
-    global initialized
-    return initialized
+class Lstm:
+
+    def __init__(self):
+        self.initialized = False
+        self.train_writer = None
+        self.sess = None
+        self.graph1 = tf.Graph()
 
 
-def set_lstm_initialized():
-    global initialized
-    initialized = True
+    def RNN(self, x, weights, biases):
+
+        with self.graph1.as_default():
+            if use_logistic_regression:
+                cell = tf.nn.rnn_cell.LSTMCell(n_features, activation=tf.nn.relu)
+                layers = [cell for layer in range(n_msmt)]
+                multi_cell = tf.contrib.rnn.MultiRNNCell(layers)
+                logger.info("RNN.cell,multi_cell,x = " + str((cell, multi_cell,x)))
+                outputs,states = tf.nn.dynamic_rnn(cell,x,dtype=tf.float32)
+                model = tf.matmul(outputs, weights) + biases
+            else:
+                cell = tf.nn.rnn_cell.LSTMCell(n_hidden, activation=tf.nn.relu)
+                logger.info("RNN.cell = " + str(cell))
+                outputs, _ = tf.contrib.rnn.static_rnn(cell, inputs=[x],
+                            dtype=tf.float32)
+                model = tf.matmul(outputs[-1], weights['out']) + biases['out']
+            logger.info("x = " +str(x)+ ", outputs = " +str(outputs)+ ", weights="+
+                str(weights) +", biases = "+ str(biases) +"= model = " + str(model))
+
+            # there are n_entries outputs but
+            # we only want the last output
+            return model
 
 
-def train_and_test(model, X, Y, train_op, cost, epochs, labelfn=test_labels):
-    (test_data, costs, labels) = ([], [], [])
-
-    # Training
-    for epoch in range(epochs):
-        labels = labelfn(model, X, [])
-        batch_data = [feature_classes(l[1:]) for l in labels]
-        train_data = batch_data[0 : int(len(batch_data)*0.75)]
-        test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
-        train(train_op, cost, X, Y, train_data, costs, epoch, model)
-        logger.debug("Epoch = " + str((epoch,epochs)) + ", train_data = " +
-            str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
-        pickleconc("train_costs.pickle", costs[-1:])
-        if iscostconverged(costs):
-            logger.debug("converged, window = " + str(costs[-5:]))
-            break
-        
-    return test(model, X, Y, test_data)
+    def tf_run_reset(self, *args, **kwargs):
+        with self.graph1.as_default():
+            self.sess = tf.Session()
+            sess = self.sess
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.local_variables_initializer())
+            return sess.run(*args, **kwargs) 
 
 
-
-def train(train_op, cost, X, Y, train_data, costs, epoch, model):
-    tf.summary.scalar('cost', cost)
-    for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
-        # Remember 'cost' contains the model
-        ops = [train_op, cost, tf.summary.merge_all(), model] 
-        logger.debug("batchx,batchy = " + str((batch_x, batch_y)))
-        _, total_cost, summa, output = tf_run(ops, feed_dict = 
-            {X: batch_x if use_logistic_regression else to_size(batch_x, n_msmt,
-                n_entries), 
-             Y: batch_y if use_logistic_regression else to_size(batch_y, 
-                n_lstm_out, n_entries)})
-        train_writer.add_summary(summa, i)
-        logger.debug("batchx = " + str(shape(batch_x)) + ", batchy = " + 
-           str(shape(batch_y)) + ", cost,out = " + str((total_cost,output[-1]))+
-           ", batch " + str(i+1) + " of " + str(len(train_data)) + 
-           ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
-        set_lstm_initialized()
-        costs.append(total_cost)
-        if iscostconverged(costs):
-            logger.debug("converged, window = " + str(costs[-5:]))
-            break
+    def tf_run(self, *args, **kwargs):
+        self.sess = self.sess if self.sess else tf.Session(graph=self.graph1)
+        sess = self.sess
+        with self.graph1.as_default():
+            if not self.train_writer:
+                self.train_writer = tf.summary.FileWriter('lstm_ekf.train', sess.graph)
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.local_variables_initializer())
+            return sess.run(*args, **kwargs) 
 
 
-def test(model, X, Y, test_data):
-    [mse, cost, output] = [[], [], []]
-    if use_logistic_regression:
-        test_logistic(model, X, Y, test_data)
-    else:
-        for test_x,test_y in test_data:
-            test_x = to_size(test_x, n_msmt, n_entries)
-            test_y = to_size(test_y, -1, n_entries)
-            labels = tf.reshape(Y, [-1, n_entries])
-            preds = tf.reshape(model, [-1, n_entries])
-            tf_mse = tf.losses.mean_squared_error(labels, preds)
-            tf_cost = tf.reduce_mean(tf.square(model - Y))
-            [mse, cost, output] = tf_run([tf_mse, tf_cost, model],
-                feed_dict={X:test_x, Y:test_y})
-            logger.debug("testx = " + str(test_x) + ", testy = " + str(test_y) + 
-                ", X = " + str(X) + ", Y = " + str(Y) +
-                ", (output,test_y) = " + str(list(zip(output, test_y))))
-        logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost)) 
-        pickleadd("test_costs.pickle", mse)
-    return [model, X, mse]
+    #Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
+    def tune_model(self, epochs = n_epochs, labelfn = test_labels, cost = None,
+        nout = n_lstm_out):
+        #tf.reset_default_graph()
+
+        with tf.variable_scope("model", reuse=tf.AUTO_REUSE), self.graph1.as_default():
+            X = tf.placeholder("float", [n_entries, n_msmt])
+            Y = tf.placeholder("float", [n_entries, nout])
+            logger.debug("X,Y = " + str((X,Y)))
+            if use_logistic_regression:
+                [X, Y, model, cost, optimizer] = tune_logistic_model()
+            else:
+                weights, biases = weights_biases(best_label(None, X, labelfn), nout)
+                model = self.RNN(X, weights, biases) 
+                #cost = tf.reduce_mean(tf.square(err(model,X) if cost else model-Y))
+                cost = cost(model,X) if cost else tf.reduce_mean(tf.square(model-Y))
+                optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
+            logger.debug("model = " + str(model))
+            train_op = optimizer.minimize(cost)
+        return self.train_and_test(model, X, Y, train_op, cost, epochs, labelfn)
 
 
-def test_logistic(model, X, Y, test_data):
-    accs = []
-    soft = tf.reshape(tf.nn.softmax(model), [1, n_lstm_out, n_classes])
-    preds = tf.argmax(tf.reshape(tf.one_hot(tf.nn.top_k(soft).indices, 
-        n_classes), [1, n_lstm_out, n_classes]), 1)
-    labels = tf.argmax(Y, 1)
-    tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)
-    tf_recall = tf.metrics.recall(labels=labels, predictions=preds)
-    tf_precision = tf.metrics.precision(labels=labels, predictions=preds)
-    tf_tn = tf.metrics.true_negatives(labels=labels, predictions=preds)
-    tf_fp = tf.metrics.false_positives(labels=labels, predictions=preds)
-    for (test_x, test_y) in test_data:
-        accs.append(tf_run(
-            tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
-            feed_dict={X:test_x, Y:test_y}))
-        logger.info("pred,labels=" + str(tf_run(tf.stack([preds,labels]),
-            feed_dict={X:test_x, Y:test_y})))
-        logger.info("x = " + str(test_x) + ", y = " + str(test_y))
-        logger.info("acc, recall,precision = "+str((accs[-1], test_y, test_x)))
-        pickleadd("test_logit_accuracy.pickle", accs[-1].flatten())
-    return accs[-1] 
+    def tune_logistic_model(self):
+        X = tf.placeholder(tf.float32, [n_entries, n_msmt, n_features])
+        Y = tf.placeholder(tf.float32, [1, n_lstm_out, n_classes])
+        weights = tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
+        biases = tf.Variable(tf.ones([n_entries, n_msmt, n_classes])*1e-2)
+        model = self.RNN(X, weights, biases)
+        labels = tf.nn.softmax(Y)
+        labels = tf.reshape(Y, [n_lstm_out, n_classes])
+        logits = tf.reshape(model, [n_lstm_out, n_classes])
+        cost = tf.reduce_mean(tf.losses.softmax_cross_entropy(labels, logits))
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
+        return [X, Y, model, cost, optimizer]
+
+
+    def train(self, train_op, cost, X, Y, train_data, costs, epoch, model):
+        with self.graph1.as_default():
+            tf.summary.scalar('cost', cost)
+            for (i, (batch_x, batch_y)) in zip(range(len(train_data)), train_data):
+                 # Remember 'cost' contains the model
+                ops = [train_op, cost, tf.summary.merge_all(), model] 
+                logger.debug("batchx,batchy = " + str((batch_x, batch_y)))
+                _, total_cost, summa, output = self.tf_run(ops, feed_dict = 
+                    {X: batch_x if use_logistic_regression else to_size(batch_x,
+                        n_msmt, n_entries), 
+                     Y: batch_y if use_logistic_regression else to_size(batch_y, 
+                        n_lstm_out, n_entries)})
+                self.train_writer.add_summary(summa, i)
+                logger.debug("batchx = " + str(shape(batch_x)) + ", batchy = " + 
+                    str(shape(batch_y))+", cost,out = "+str((total_cost,output[-1]))+
+                    ", batch " + str(i+1) + " of " + str(len(train_data)) + 
+                    ", epoch " + str(epoch+1) + " of " + str(n_epochs)) 
+                self.set_lstm_initialized()
+                costs.append(total_cost)
+                if iscostconverged(costs):
+                    logger.debug("converged, window = " + str(costs[-5:]))
+                    break
+
+
+    def test(self, model, X, Y, test_data):
+        [mse, cost, output] = [[], [], []]
+        if use_logistic_regression:
+            test_logistic(model, X, Y, test_data)
+        else:
+            for test_x,test_y in test_data:
+                test_x = to_size(test_x, n_msmt, n_entries)
+                test_y = to_size(test_y, -1, n_entries)
+                with self.graph1.as_default():
+                    labels = tf.reshape(Y, [-1, n_entries])
+                    preds = tf.reshape(model, [-1, n_entries])
+                    tf_mse = tf.losses.mean_squared_error(labels, preds)
+                    tf_cost = tf.reduce_mean(tf.square(model - Y))
+                    [mse, cost, output] = self.tf_run([tf_mse, tf_cost, model],
+                        feed_dict={X:test_x, Y:test_y})
+                    logger.debug("testx = " + str(test_x) + ", testy = " + 
+                        str(test_y) + ", X = " + str(X) + ", Y = " + str(Y) +
+                        ", (output,test_y) = " + str(list(zip(output, test_y))))
+                logger.debug("LSTM MSE = " + str(mse) + ", cost = " + str(cost)) 
+                pickleadd("test_costs.pickle", mse)
+        return [model, X, mse]
+
+
+    def lstm_initialized(self):
+        return self.initialized
+
+
+    def set_lstm_initialized(self):
+        self.initialized = True
+
+
+    def train_and_test(self, model, X, Y, train_op, cost, epochs, labelfn=test_labels):
+        (test_data, costs, labels) = ([], [], [])
+
+        # Training
+        for epoch in range(epochs):
+            labels = labelfn(model, X, [])
+            batch_data = [feature_classes(l[1:]) for l in labels]
+            train_data = batch_data[0 : int(len(batch_data)*0.75)]
+            test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
+            self.train(train_op, cost, X, Y, train_data, costs, epoch, model)
+            logger.debug("Epoch = " + str((epoch,epochs)) + ", train_data = " +
+                str(shape(train_data)) + ", test_data = " + str(shape(test_data)))
+            pickleconc("train_costs.pickle", costs[-1:])
+            if iscostconverged(costs):
+                logger.debug("converged, window = " + str(costs[-5:]))
+                break
+         
+        return self.test(model, X, Y, test_data)
+
+
+    def test_logistic(self, model, X, Y, test_data):
+        accs = []
+        soft = tf.reshape(tf.nn.softmax(model), [1, n_lstm_out, n_classes])
+        preds = tf.argmax(tf.reshape(tf.one_hot(tf.nn.top_k(soft).indices, 
+            n_classes), [1, n_lstm_out, n_classes]), 1)
+        labels = tf.argmax(Y, 1)
+        tf_accuracy = tf.metrics.accuracy(labels, predictions=preds)
+        tf_recall = tf.metrics.recall(labels=labels, predictions=preds)
+        tf_precision = tf.metrics.precision(labels=labels, predictions=preds)
+        tf_tn = tf.metrics.true_negatives(labels=labels, predictions=preds)
+        tf_fp = tf.metrics.false_positives(labels=labels, predictions=preds)
+        for (test_x, test_y) in test_data:
+            accs.append(self.tf_run(
+                tf.stack([tf_accuracy, tf_recall, tf_precision, tf_tn, tf_fp]), 
+                feed_dict={X:test_x, Y:test_y}))
+            logger.info("pred,labels=" + str(self.tf_run(tf.stack([preds,labels]),
+                feed_dict={X:test_x, Y:test_y})))
+            logger.info("x = " + str(test_x) + ", y = " + str(test_y))
+            logger.info("acc, recall,precision = "+str((accs[-1], test_y, test_x)))
+            pickleadd("test_logit_accuracy.pickle", accs[-1].flatten())
+        return accs[-1] 
+
 
 
 if __name__ == "__main__":
-    tune_model(1)
+    Lstm().tune_model(1)
     logger.debug("done")
     print("Output in lstm_ekf.log")

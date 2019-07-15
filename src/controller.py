@@ -18,10 +18,18 @@ msmts = []
 mcount = 1
 threads = []
 monitor_msmts = {}
+lstms = {}
 ekfs = {}
 generators = get_generators()
 gid = len(generators)
 simulated = True
+
+
+def lstm():
+    tname = threading.currentThread().getName()
+    if not tname in lstms:
+        lstms[tname] = Lstm()
+    return lstms[tname]
 
 
 # Only the first n_msmt values are used, the rest are ignored by LSTM & EKF
@@ -63,8 +71,8 @@ def sim_measurements(pre=""):
 
 
 def predict_coeffs(model, newdata, X, randomize=False):
-    logger.info("LSTM initialized = " + str(lstm_initialized()))
-    if not lstm_initialized() or randomize:
+    logger.info("LSTM initialized = " + str(lstm().lstm_initialized()))
+    if not lstm().lstm_initialized() or randomize:
         def rand_coeffs(i): 
             return list(map(lambda n: uniform(0.0,1.0), range(n_coeff)))
         return list(map(rand_coeffs, range(n_entries)))
@@ -73,10 +81,10 @@ def predict_coeffs(model, newdata, X, randomize=False):
         return [[]]
     elif isinstance(model, list):
         lout = []
-        for lstm in model:
-            lout.append(tf_run_reset(lstm, feed_dict={X:input}))
+        for mdl in model:
+            lout.append(lstm().tf_run_reset(mdl, feed_dict={X:input}))
     else:
-        output=vote([tf_run_reset(model,feed_dict={X:input}) for i in range(1)])
+        output=vote([lstm().tf_run_reset(model,feed_dict={X:input}) for i in range(1)])
     logger.debug("Coeff output = " + str(shape(output)) + ", predict = " + 
         str(output[-1]) + ", input = " + str(shape(newdata)))
     return output
@@ -303,7 +311,7 @@ def track_accuracies(ekf, count, filename, label=""):
 def tuned_accuracy():
     if n_iterations > 1 and not simulated:
         run_async("activity-cmd")
-    lstm_model, X, lstm_accuracy = tune_model(n_epochs, bootstrap_labels)
+    lstm_model, X, lstm_accuracy = lstm().tune_model(n_epochs, bootstrap_labels)
     history = [measurements() for i in range(10)]
     ekf = [build_ekf([], history)[0]]
     for i in range(1):
@@ -409,7 +417,6 @@ def createHj(model, X, xinit):
     return hjacobian
 
 
-def createHx(model, X, y):
     p = array([zeros(n_msmt)]).T #array([predict_coeffs(model,y,X)[-1]]).T
     logger.info("p,y = " + str((p,y)))
     def H(x):
@@ -494,7 +501,7 @@ def run_monitors():
 
 def create_monitor(host):
     def monitor_loop():
-        for sample in range(15): 
+        for sample in range(n_users): 
             monitor_host(host)
             logger.info("Sample " + str(sample) + " of 150 done")
             sleep(1)
@@ -521,7 +528,7 @@ def tune_host(host):
     # Tune host ekf
     def label_fn(model, X, labels=[], sample_size=10):
         return bootstrap_labels(model, X, labels, sample_size, "boot", host)
-    lstm_model, X, _ = tune_model(n_epochs, label_fn)
+    lstm_model, X, _ = lstm().tune_model(n_epochs, label_fn)
     history = [measurements(host) for x in range(10)]
     monitor_msmts[host].extend(history)
     coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)

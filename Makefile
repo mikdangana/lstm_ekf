@@ -37,7 +37,7 @@ passive: clean
 	@echo "\nRunning Passive Monitors with Traffic...\n"
 	python src/controller.py --passive --generate-traffic
 
-test: clean testekf testlstm testctl
+test: clean testekf testlstm testctl testconvergence testmodeltrack
 
 testekf: clean
 	@echo "\nTesting EKF Unit...\n"
