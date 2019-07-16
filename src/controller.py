@@ -424,6 +424,14 @@ def createHj(model, X, xinit):
     return None #H
 
 
+def createHx(model, X, y):
+    p = array([zeros(n_msmt)]).T #array([predict_coeffs(model,y,X)[-1]]).T
+    logger.info("p,y = " + str((p,y)))
+    def H(x):
+        return x + 10 #Hlqn(x)
+    return None #H
+
+
 def Hlqn(x):
     rows = solve_lqn_input(toLqn(list(x.T[0])))
     logger.debug("x,rows[0] = " + str((x, array([rows[0]]).T)))

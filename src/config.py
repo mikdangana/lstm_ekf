@@ -29,6 +29,7 @@ n_iterations = 500
 use_logistic_regression = False
 config = None
 tasks = []
+cfg_info = {}
 state_file = "lstm_ekf.state"
 initialized = False
 config = None
@@ -86,13 +87,14 @@ def do_action(x_prior, host=None):
     tasks = get_config('lqn-tasks') if not len(tasks) else tasks
     ids = find(get_config("lqn-hosts"), host)
     pred = convert_lqn([p[0] for p in x_prior], len(tasks))
-    thresholds = [float(t) for t in sublist(get_config("lqn-thresholds"), ids)]
+    thresholds = [float(v) for t,v in sublist(get_config("lqn-thresholds"),ids)]
+    ttypes = [t for t,v in sublist(get_config("lqn-thresholds"),ids)]
     logger.info("prediction = " + str(pred) + ", thresholds=" + str(thresholds))
 
     for i,threshold in zip(range(len(thresholds)), thresholds):
         name = [k for k,v in tasks[i].items()][0]
         logger.info("prior.ids,pred.i,ts ="+str((ids,pred[i+ids[0]],threshold)))
-        if (pred[i + ids[0]] >= threshold): 
+        if crossed(pred[i + ids[0]], threshold, ttypes[i]): 
             res_info = solve_lqn(i + ids[0]) # search for LQN input value
             for j,res in zip(range(len(tasks)), res_info[0:len(tasks)]):
                 resname = [k for k,v in tasks[j].items()][0]
@@ -104,6 +106,9 @@ def do_action(x_prior, host=None):
                     run_actions(get_config("lqn-deprovision-actions"), j)
                     tasks[j][resname] = tasks[j][resname] - 1
 
+
+def crossed(v, t, ttype):
+    return ttype == "upper" and v >= t or ttype == "lower" and v < t
 
 
 def solve_lqn(metric_id):
@@ -176,7 +181,8 @@ def run_action(action):
     action = {k:v for k,v in zip(run_state.keys(), action[0:3])}
 
     for res,count in action.items():
-        logger.debug("res = " + str(res) + ", count = " + str(count) + ", run_state = " + str(run_state) + ", action = " + str(action))
+        logger.debug("res = " + str(res) + ", count = " + str(count) + 
+            ", run_state = " + str(run_state) + ", action = " + str(action))
         if int(count) > int(run_state[res]):
             for step in get_steps("provision-cmds", res):
                 os_run(step)
@@ -199,7 +205,20 @@ def get_steps(*cmd_path):
         for cmd in step if isinstance(step, list) else [step]: 
             for k,v in variables.items():
                 cmd = re.sub(r'<' + str(k) + '>', v, cmd)
-                steps.append(cmd)
+            steps.append(cmd)
+    return steps
+
+
+def dups(cfg, *dup_key):
+    steps = []
+    variables = dict(ast.literal_eval(get_config(dup_key)))
+
+    logger.debug("variables =" + str(variables.items()) + ", cfg = " + str(cfg))
+    for step in (cfg if cfg else []):
+        for cmd in step if isinstance(step, list) else [step]: 
+            for k,v in variables.items():
+                if '<' + str(k) + '>' in cmd:
+                    steps.append(re.sub(r'<' + str(k) + '>', v, cmd))
     return steps
 
 
