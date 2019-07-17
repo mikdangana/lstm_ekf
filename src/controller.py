@@ -511,7 +511,7 @@ def create_monitor(host):
     def monitor_loop():
         for sample in range(n_users): 
             monitor_host(host)
-            logger.info("Sample " + str(sample) + " of 150 done")
+            logger.info("Sample " + str(sample) + " of "+str(n_users)+" done")
             sleep(1)
         os_run("mv measurements.pickle " + host + "_measurements.pickle")
         os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")

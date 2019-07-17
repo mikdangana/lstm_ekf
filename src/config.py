@@ -78,7 +78,6 @@ def process_args():
             usage()
             exit()
 
-
 process_args()
 
 
@@ -87,8 +86,9 @@ def do_action(x_prior, host=None):
     tasks = get_config('lqn-tasks') if not len(tasks) else tasks
     ids = find(get_config("lqn-hosts"), host)
     pred = convert_lqn([p[0] for p in x_prior], len(tasks))
-    thresholds = [float(v) for t,v in sublist(get_config("lqn-thresholds"),ids)]
-    ttypes = [t for t,v in sublist(get_config("lqn-thresholds"),ids)]
+    thresh_cfg = sublist(get_config("lqn-thresholds"),ids)
+    ttypes = [[k for k,v in i.items()][0] for i in thresh_cfg]
+    thresholds = [float([v for k,v in i.items()][0]) for i in thresh_cfg]
     logger.info("prediction = " + str(pred) + ", thresholds=" + str(thresholds))
 
     for i,threshold in zip(range(len(thresholds)), thresholds):
@@ -112,7 +112,7 @@ def crossed(v, t, ttype):
 
 
 def solve_lqn(metric_id):
-    to_lqn = lambda lst: reduce(lambda a,b: "["+str(a)+","+str(b)+"]", lst)
+    to_lqn = lambda lst: reduce(lambda a,b: b if a==0 else "["+str(a)+","+str(b)+"]", lst)
     for task in tasks:
         for k,v in task.items():
             logger.info("lqn.input = " + str({k: v}))
@@ -120,7 +120,7 @@ def solve_lqn(metric_id):
 
     out = os_run(get_config('model-solve-cmd'))
     logger.info("metric_id="+str(metric_id)+", rows="+str(len(out.split("\n"))))
-    metric = lambda row: float(row[3:][metric_id]) 
+    metric=lambda row:float(row[3:][metric_id] if len(row[3:])>metric_id else 0)
     low = lambda a,b: a if metric(a) < metric(b) else b
     okrows = lambda rows: filter(lambda row: len(row) > 1, rows)
     rows = [l.split(", ") for l in okrows(out.split("\n")[1:])]

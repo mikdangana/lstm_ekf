@@ -5,8 +5,12 @@ from math import log
 from getopt import getopt, GetoptError
 from pandas import DataFrame
 from surface3d import plotsurface
-import pickle, re
+from utils import *
+import pickle, re, os
 import pylab
+
+
+fig_file = None
 
 
 def load(n):
@@ -28,11 +32,25 @@ def loadfiles(filenames):
     return data
 
 
+def parse_client_info(filename):
+    txt = pickleload(filename)
+    toks = list(filter(lambda s: s.endswith("s"), re.split("[\s]+", txt)))[2:]
+    return [float(i.replace("s","")) for i in toks] 
+
+ 
 def parse_string(s):
     rows = filter(lambda l: "fetch" not in l and len(l), s.split("\n"))
     rows = [re.compile(r'\W+').split(r) for r in rows]
     rows = [[r[0], r[1] + "." + r[2]] for r in rows]
     return [[float(c.replace("s","")) for c in r] for r in rows[1:]]
+
+
+def showplot():
+    if fig_file:
+        print("showplot().fig_file = " + str(fig_file))
+        savefig(fig_file)
+    else:
+        show()
 
 
 def plotpredictions(args):
@@ -56,7 +74,7 @@ def plotpredictions(args):
     #legend((xline, yline), (lgd[metric], 'EKF.x_prior'))
     legend((lgd[metric if metric<len(lgd) else -1], 'EKF.x_prior'))
     title('EKF Prior Prediction vs ' + lgd[metric if metric<len(lgd) else -1])
-    show()
+    showplot()
 
 
 def formatline(data, isGradient, indices, intervals, normalize):
@@ -90,6 +108,42 @@ def formatlines(data, isGradient, indices, intervals, normalize, n):
         data[n] = (array(data[n]) - mind) / (maxd - mind)
     return data[n]
 
+
+def plot_all(path):
+    global fig_file
+    print("plot_all().path = " + path)
+    os_run("tar xvf " + path + "/*.tar")
+    (data, count) = ({}, 0)
+    for r, d, f in os.walk(path):
+        for file in f:
+            fname = os.path.join(r, file)
+            if 'clientout.pickle' in file:
+                data[file] = parse_client_info(fname)
+            elif 'measurements.pickle' in file:
+                data[file] = col_data(fname, 0)
+                count = 1 if not count else count
+        for dir in d:
+            if 'run_' in dir:
+                datum = plot_all(os.path.join(r, dir))
+                data = {k:v + data[k] for k,v in datum.items()}
+                count = count + 1
+    data = {k:array(v)/count for k,v in data.items()}
+    for file in data.keys():
+        fname = os.path.join(path, file)
+        fig_file = fname.replace(".pickle", ".png")
+        plotlines(to_line(fname, data[file]))
+    print("plot_all() done")
+    return data
+                
+
+def col_data(path, index):
+    data = pickleload(path)
+    return [row[index] for row in data] if len(array(data).shape)>2 else data
+
+
+def to_line(fname, col):
+    pickledump(fname, col)
+    return [fname]
 
 
 def parse_line_args(args):
@@ -152,14 +206,14 @@ def plotlines(args):
         title(nextv(args, '--title', lgd[filenames[0]] + ' vs Time'))
     else:
         styles = ['r--', 'b','g','y'] #['r--', 'g^', 'bo','y']
-        (x,n) =(data[0],1) if '--vs' in args else (arange(0, len(data[0]), 1),0)
+        (x,n) = (data[0],1) if '--vs' in args else (arange(0,len(data[0]),1),0)
         for i,datum in zip(range(len(data[n:])), data[n:]):
             df = DataFrame({'x': x, 'y' + str(i): datum})
             plot('x','y'+str(i), styles[i], data=df, label=lgd[filenames[i]])
         pylab.legend()
         ylabel(nextv(args, '--yaxis', 'Value'))
         title(nextv(args, '--title', 'Tuned vs Plain EKF Accuracy by Epoch'))
-    show()
+    showplot()
 
 
 def nextv(lst, k, defaultval):
@@ -228,7 +282,7 @@ def plotscatter(filenames):
     xlabel('Iteration')
     ylabel('Accuracy by perf metric')
     title('Bootstrap Accuracies Per Process')
-    show()
+    showplot()
 
 
 
@@ -251,7 +305,7 @@ def usage():
 
 def main():
     try:
-        opts, args = getopt(sys.argv[1:], "hslp:3", ["help", "scatter", "line", "predictions", "surface3d"])
+        opts, args = getopt(sys.argv[1:], "hslpa:3", ["help", "scatter", "line", "predictions", "surface3d", "all"])
     except GetoptError as err:
         print(str(err))
         usage()
@@ -266,6 +320,8 @@ def main():
             plotpredictions(arg)
         elif o in ( "-3", "--surface3d" ):
             plotsurface(arg)
+        elif o in ( "-a", "--plotall" ):
+            plot_all(a)
         else:
             usage()
     if not len(opts):

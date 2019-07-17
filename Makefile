@@ -37,6 +37,14 @@ passive: clean
 	@echo "\nRunning Passive Monitors with Traffic...\n"
 	python src/controller.py --passive --generate-traffic
 
+stats:  clean active
+	rm --force --recursive run_$(iter)
+	mkdir run_$(iter)
+	mv *.tar run_$(iter)
+	mv *.pickle run_$(iter)
+	@echo "\nrun_$(iter) done\n"
+
+
 test: clean testekf testlstm testctl testconvergence testmodeltrack
 
 testekf: clean
