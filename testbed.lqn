@@ -5,8 +5,8 @@
 
 $nUsers = [10]
 $nWebServers = [1]
-$nDb = 1
-$nSearch = 1
+$nDb = [1]
+$nSearch = [1]
 
 G "C:\Program Files (x86)\LQN Solvers\lqngen.exe" 			# Model comment 
 1e-005			# Convergence test value.
@@ -30,7 +30,6 @@ P 0
   p p1 f i
   p p2 f
   p p3 f i
-  p p4 f i
 -1
 
 T 0
