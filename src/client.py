@@ -19,13 +19,13 @@ def fetch(session, index, cmd_cfg):
 
         elapsed = default_timer() - START_TIME
         time_elapsed = "{:5.6f}s".format(elapsed)
-        print("{0:<30} {1:>20}".format(index, time_elapsed))
+        print("{0:<30} {1:>20}".format(START_TIME, time_elapsed))
 
         return data
 
 
 async def get_data_asynchronous(cmd_cfg):
-    print("{0:<30} {1:>20}".format("Client", "Elapsed"))
+    print("{0:<30} {1:>20}".format("Start-time", "Elapsed"))
     with ThreadPoolExecutor(max_workers=10) as executor:
         with requests.Session() as session:
             # Set any session parameters here before calling `fetch`
@@ -49,6 +49,8 @@ def test_client(cmd_cfg):
 
 
 def main():
+    global n_users
+    n_users = 10000
     cmd_cfg = "db-endpoint" if len(sys.argv)<2 else sys.argv[1]
     base_url = get_config(cmd_cfg)
     print("fetch().base_url = " + str(base_url) + ", cfg = " + str(cmd_cfg))

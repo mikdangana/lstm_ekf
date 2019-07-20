@@ -10,8 +10,9 @@ from utils import *
 
 
 state_ids = []  # initialized in init_config_variables()
+psize = 8
 n_proc = 3
-n_msmt = 24 # 8 * n_proc # Kalman z
+n_msmt = psize * n_proc # Kalman z
 dimx = n_msmt
 n_coeff = dimx * 2 + n_msmt # Kalman q, f, r
 n_entries = 3
@@ -33,10 +34,11 @@ cfg_info = {}
 state_file = "lstm_ekf.state"
 initialized = False
 config = None
-norms = [1000, 20, 20, 1000000000, 1000000000, 10000, 1, 1]
+norm = 1e10
+norms = [norm, norm, norm, norm, norm, norm, 100, 100]
 procs = []
 n_user_rate_s = 0.0000001
-n_users = 10
+n_users = 500
 active_monitor = True
 
 
@@ -89,20 +91,20 @@ def do_action(x_prior, host=None):
     thresh_cfg = sublist(get_config("lqn-thresholds"),ids)
     ttypes = [[k for k,v in i.items()][0] for i in thresh_cfg]
     thresholds = [float([v for k,v in i.items()][0]) for i in thresh_cfg]
-    logger.info("prediction = " + str(pred) + ", thresholds=" + str(thresholds))
+    logger.info("prediction,thresholds = " + str((pred,thresholds)))
 
     for i,threshold in zip(range(len(thresholds)), thresholds):
-        name = [k for k,v in tasks[i].items()][0]
+        #name = [k for k,v in tasks[i].items()][0]
         logger.info("prior.ids,pred.i,ts ="+str((ids,pred[i+ids[0]],threshold)))
         if crossed(pred[i + ids[0]], threshold, ttypes[i]): 
             res_info = solve_lqn(i + ids[0]) # search for LQN input value
             for j,res in zip(range(len(tasks)), res_info[0:len(tasks)]):
                 resname = [k for k,v in tasks[j].items()][0]
-                logger.info("Resource task,value,i = " + str((tasks[j],res,i)))
-                if res > tasks[j][resname]:
+                logger.info("Resource task,pred,j = " + str((tasks[j],res,j)))
+                if int(res) > tasks[j][resname]:
                     run_actions(get_config("lqn-provision-actions"), j)
                     tasks[j][resname] = tasks[j][resname] + 1
-                elif res < tasks[j][resname] and tasks[j][resname] > 0:
+                elif int(res) < tasks[j][resname] and tasks[j][resname] > 0:
                     run_actions(get_config("lqn-deprovision-actions"), j)
                     tasks[j][resname] = tasks[j][resname] - 1
 
@@ -112,6 +114,7 @@ def crossed(v, t, ttype):
 
 
 def solve_lqn(metric_id):
+    # Search for LQN input that produces the lowest value of associated metric
     to_lqn = lambda lst: reduce(lambda a,b: b if a==0 else "["+str(a)+","+str(b)+"]", lst)
     for task in tasks:
         for k,v in task.items():

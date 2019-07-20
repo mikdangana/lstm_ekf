@@ -7,38 +7,32 @@ variables:
     application-host: 127.0.0.1
     db-host: 127.0.0.1
     search-host: 127.0.0.1
-    lqn-model: '/home/ubuntu/woodside/lstm_ekf/testbed.lqn'
-    solr-url: 'https://127.0.0.1:8983/solr'
-    cassandra-home: '/home/ubuntu/woodside/apache-cassandra-3.11.2'
+    lqn-model: '/home/user/woodside/lstm_ekf/testbed.lqn'
+    solr-url: 'https://<search-host>:8983/solr'
+    application-url: 'http://127.0.0.1:8878'
+    cassandra-home: '/home/user/woodside/apache-cassandra-3.11.2'
+
 
 provision-cmds: 
-    solr: "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
-    db: 
-        - "sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' \"<cassandra-home>/conf/cassandra.yaml\""
-        - "<cassandra-home>/bin/stop"
-        - "<cassandra-home>/bin/start" 
-        # Figure out how to use JMX rather than cassandra stop/start
+    solr: "curl '<application-url>/addsearchendpoint'"
+    db: "curl '<application-url>/adddbendpoint'"
 
 deprovision-cmds: 
-    solr-rem-node: "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
-    db-rem-node: 
-        - "sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' \"<cassandra-home>/conf/cassandra.yaml\""
-        - "<cassandra-home>/bin/stop"
-        - "<cassandra-home>/bin/start"
-        # Figure out how to use JMX rather than cassandra stop/start
+    solr: "curl '<application-url>/removesearchendpoint'"
+    db: "curl '<application-url>/removedbendpoint'"
 
 
-search-endpoint: "http://<application-host>:8878/searchindex?q=*:*"
+search-endpoint: "http://<application-host>:8878/searchremote?q=*:*"
 
-db-endpoint: "http://<application-host>:8878/fetch?q="
+db-endpoint: "http://<application-host>:8878/fetchremote?q="
 
-db-endpoint2: "http://<application-host>:8878/fetch?q="
+db-endpoint2: "http://<application-host>:8878/fetchRemote?q="
 
-login-<application-host>: "ssh -i 'workkeypair.pem' ec2-user@<application-host>"
+login-34.219.25.234: "ssh -i 'mykeys.pem' user@<application-host>"
 
-login-<db-host>: "ssh -i 'mykeypair1.pem' ec2-user@<db-host>"
+login-35.163.251.91: "ssh -i 'mykeys.pem' user@<db-host>"
 
-login-<search-host>: "ssh -i 'workkeypair.pem' ubuntu@<search-host>"
+login-52.89.137.96: "ssh -i 'mykeys.pem' user@<search-host>"
 
 memory-cmd-<application-host>: "top -b -n 1 -a"
 
@@ -48,58 +42,31 @@ lqn-out: "system.lqn.out"
 
 lqn-range: [50,20]
 
-#lqn-noise-factor: [0.00002,0.00002,0.00002,0.00001,0.00002,0.000000002,0.00002]
 lqn-noise-factor: [2,0.2,0.2,0.1,0.2,0.00002,0.2]
 
 lqn-tasks:
-        - nApps: 1
-        - dbTimeout: 1
-        - ndbConn: 1
-        - ndbQueries: 1
-        - nDb: 1
         - nSearch: 1
+        - nDb: 1
 
 lqn-thresholds: 
-        - 0.9
-        - 0.9
-        - 0.9
-        - 0.9
-        - 0.00001
-        - 0.9
+        - upper: 0.9
+        - upper: 0.9
+        - upper: 0.9
 
 lqn-hosts:
-        - "<application-host>"
-        - "<application-host>"
-        - "<application-host>"
-        - "<application-host>"
-        - "<db-host>"
         - "<search-host>"
+        - "<db-host>"
+        - "<application-host>"
 
 
 lqn-provision-actions:
-        - "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
-        -
-            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"sed -i 's/seeds:(.*)/seeds:$1, <cassandra-host>/' '<cassandra-home>/conf/cassandra.yaml'\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/stop\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/start\"" 
-        # Figure out how to use JMX rather than cassandra stop/start
-        - "curl http://<application-host>:8878/setdboptions?readtimeoutms=500000"
-        - "curl http://<application-host>:8878/setdboptions?connsperhost=10000"
-        - "curl http://<application-host>:8878/setdboptions?maxinflightqueries=10000"
-        - "curl '<solr-url>/admin/collections?action=ADDREPLICA&collection=items&shard=shard1&node=<solr-host>:9501_solr/'"
+        - "curl '<application-url>/addsearchendpoint'"
+        - "curl '<application-url>/adddbendpoint'"
 
 
 lqn-deprovision-actions:
-        - "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
-        -
-            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"sed -i 's/seeds:([^,]*,)([^,]*)$/seeds:$1/' '<cassandra-home>/conf/cassandra.yaml'\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/stop\""
-            - "ssh -i \"mykeypair1.pem\" ec2-user@<db-host> -t \"<cassandra-home>/bin/start\"" 
-        # Figure out how to use JMX rather than cassandra stop/start
-        - "curl http://<application-host>:8878/setdboptions?readtimeoutms=1000"
-        - "curl http://<application-host>:8878/setdboptions?connsperhost=10"
-        - "curl http://<application-host>:8878/setdboptions?maxinflightqueries=10"
-        - "curl '<solr-url>/admin/collections?action=DELETEREPLICA&collection=items&shard=shard1&node=<solr-host>'"
+        - "curl '<application-url>/removesearchendpoint'"
+        - "curl '<application-url>/removedbendpoint'"
 
 
 model-update-cmd: "sed -i 's/<param0>\\s*=\\s*\\[[0-9,\\. ]*\\]/<param0> = <param1>/' <lqn-model>"

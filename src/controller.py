@@ -6,7 +6,7 @@ from client import *
 from time import sleep, time
 from numpy import subtract, concatenate, divide, nan_to_num
 import config
-import threading
+import threading, sys
 import io, importlib
 from contextlib import redirect_stdout
 from statistics import mode
@@ -22,7 +22,8 @@ lstms = {}
 ekfs = {}
 generators = get_generators()
 gid = len(generators)
-simulated = True
+has_traffic = False
+simulated = False
 
 
 def lstm():
@@ -37,16 +38,17 @@ def measurements(host = ""):
     if simulated:
         return sim_measurements(host)
     cmd = get_config("memory-cmd-" + host)
-    cmd = "top -b -n 1 -o %MEM" if not cmd else cmd
+    cmd = "top -b -n 1 " if not cmd else cmd
     cmd = cmd + " | grep \"^ *[0-9]\""
     if host and len(host):
         cmd = get_config("login-"+host) + " -o LogLevel=QUIET -t '" + cmd + "'"
-    pstats = os_run(cmd + " | awk '{print $1,$3,$4,$5,$6,$7,$9,$10}'")
+    pstats = os_run(cmd + " | awk '{print $5,$5,$5,$5,$6,$7,$9,$10}' | sort -k 7 -nr")
     pstats = pstats.split() if pstats else ""
     logger.info(str(len(pstats)) + " measurements retrieved")
     pstatsf = list(map(normalize, zip(range(len(pstats)), pstats)))
-    pstatsf = pstatsf[0:dimz] + list(zeros(dimz))
-    logger.info("parsed measurements, size=" + str(len(pstatsf)))
+    pstatsf = pstatsf[0:n_msmt]
+    #pstatsf = pstatsf[0:dimz] + list(zeros(dimz))
+    logger.info("parsed measurements, size=" + str((pstatsf,len(pstatsf))))
     pickleadd(host + "measurements.pickle", array(pstatsf).flatten())
     return pstatsf if len(pstatsf)==n_msmt else []
 
@@ -150,7 +152,7 @@ def bootstrap_labels(model, X, labels=[], sample_size=10, pre="boot", host="",
 
 
 def add_labels(labels, accuracies, coeffs, model, X, new_msmts, history, step):
-    (action_interval, pred_per_sample, msmts) = (40, 1, history[-1])
+    (action_interval, pred_per_sample, msmts) = (40, 10, history[-1])
     if len(msmts):
         for j in range(pred_per_sample):
             coeffs.append(predict_coeffs(model, msmts, X))
@@ -362,6 +364,8 @@ def run_test_convergence(genid):
 
 
 def generate_traffic():
+    global has_traffic
+    has_traffic = True
     for endp in ["db-endpoint", "search-endpoint"]:
         sleep(10)
         f = io.StringIO()
@@ -370,6 +374,7 @@ def generate_traffic():
         pickledump("clientout.pickle", f.getvalue())
         os_run("tar rvf pickles_" + endp + ".tar *.pickle")
         os_run("rm *.pickle")
+    has_traffic = False
 
 
 def toLqn(v):
@@ -508,10 +513,14 @@ def run_monitors():
 
 
 def create_monitor(host):
+    global has_traffic
+    has_traffic = True
     def monitor_loop():
-        for sample in range(n_users): 
+        sample = 0
+        while has_traffic: #for sample in range(n_users): 
             monitor_host(host)
-            logger.info("Sample " + str(sample) + " of "+str(n_users)+" done")
+            sample = sample + 1
+            logger.info("Sample " + str(sample) + " done")
             sleep(1)
         os_run("mv measurements.pickle " + host + "_measurements.pickle")
         os_run("tar rvf pickles_" + host + ".tar " + host + "*.pickle")
@@ -565,5 +574,6 @@ if __name__ == "__main__":
     for t in threads: 
         t.join()
     logger.info("Controller done : " + str(time() - start) + "s")
+    sys.exit()
 
 

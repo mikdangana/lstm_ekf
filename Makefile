@@ -32,10 +32,12 @@ monitor: clean
 active: clean
 	@echo "\nRunning Active Monitors with Traffic...\n"
 	python src/controller.py --generate-traffic
+	reset
 
 passive: clean
 	@echo "\nRunning Passive Monitors with Traffic...\n"
 	python src/controller.py --passive --generate-traffic
+	reset
 
 stats:  clean active
 	rm --force --recursive run_$(iter)

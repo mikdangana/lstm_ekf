@@ -114,7 +114,8 @@ def best_label(model, X, labelfn):
     labels = labelfn(model, X, [])
     batch_data = [feature_classes(l[1:]) for l in labels]
     #batch_data.sort(key = lambda b: b[0], reverse=True)
-    logger.info("best label = " + str(batch_data[0][1]))
+    logger.info("best_label.batch_data,labels = " + str((array(batch_data).shape,batch_data, labels)))
+    logger.info("best_label = " + str(batch_data[0][1]))
     return array(batch_data[0][1]).T
 
 
