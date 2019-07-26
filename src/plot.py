@@ -283,11 +283,24 @@ def plotscatter(filenames):
     showplot()
 
 
-def plot_all(path):
+def plot_all(path, to_plot=True):
     global fig_file
     path = (path[0] if len(path) else "") if isinstance(path, list) else path
     print("plot_all().path = " + path)
-    (data, maxs, mins, count) = ({}, {}, {}, 0)
+    (sums, maxs, mins, count) = load_path(path)
+    data = {k:array(v)/count[k] for k,v in sums.items()}
+    for file in (data.keys() if to_plot else []):
+        print("plot_all().data[6] = " + str((file,count[file],path,to_plot,[r[6] for r in data[file]])))
+        fname = os.path.join(path, file)
+        fig_file = fname.replace(".pickle", ".png")
+        yerr = array(subm(maxs[file], mins[file]) if file in maxs else [])/2
+        plotmulti(to_line(file, data[file], yerr))
+    print("plot_all() " + path + " done")
+    return data
+
+
+def load_path(path):
+    (data, maxs, mins, count) = ({}, {}, {}, {})
     for r, d, f in os.walk(path):
         datum = {}
         for file in f:
@@ -296,25 +309,19 @@ def plot_all(path):
                 datum[file] = parse_client_info(fname)
             elif 'measurements.pickle' in file:
                 datum[file] = col_data(fname, 0)
-        for dir in d:
-            if 'run_' in dir:
-                datum = plot_all(os.path.join(r, dir))
-        if len(datum.items()):
-            items = datum.items()
-            data = {k:addm(v, data[k] if k in data else []) for k,v in items}
-            maxs = {k:maxv(v, data[k] if k in data else []) for k,v in items}
-            mins = {k:minv(v, data[k] if k in data else []) for k,v in items}
-            count = count + 1
-    data = {k:array(v)/count for k,v in data.items()}
-    for file in data.keys():
-        fname = os.path.join(path, file)
-        fig_file = fname.replace(".pickle", ".png")
-        yerr = subm(maxs[file], mins[file]) if file in maxs else []
-        if file in maxs:
-            print("plot_all().max,min,yerr = "+str((file, len(data[file]),len(maxs[file]),len(mins[file]),len(yerr))))
-        plotmulti(to_line(fname, data[file], yerr))
-    print("plot_all() done")
-    return data
+        (data,maxs,mins,count) = merge_datum(datum,data,maxs,mins,count)
+        print("load_path().f,d,path,count = " + str((f,d,path,count)))
+    return (data, maxs, mins, count)
+
+
+def merge_datum(datum, data, maxs, mins, count):
+    if len(datum.items()):
+        items = datum.items()
+        data = {k:addm(v, data[k] if k in data else []) for k,v in items}
+        maxs = {k:maxv(v, maxs[k] if k in maxs else []) for k,v in items}
+        mins = {k:minv(v, mins[k] if k in mins else []) for k,v in items}
+        count = {k: 1 + (count[k] if k in count else 0) for k,v in items}
+    return (data, maxs, mins, count)
 
 
 def col_data(path, index):
@@ -353,7 +360,7 @@ def minv(v1, v2):
 
 def to_line(fname, col, yerr):
     pickledump(fname, col)
-    if yerr and len(yerr):
+    if len(yerr):
         efile = fname.replace(".pickle", "_err.pickle")
         pickledump(efile, yerr)
         args = [fname, "--err", efile, "0"]
@@ -393,8 +400,9 @@ def plotmulti(args):
     showplot() 
 
 
-def every(v, n):
-    return [v if i%n==0 else 0 for i,v in zip(range(len(v)), v)]
+def every(vs, n):
+    print("every.vs = " + str(len(vs)))
+    return [v if i%n==0 else 0 for i,v in zip(range(len(vs)), vs)]
 
 
 def suffix(file):
