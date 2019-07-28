@@ -37,9 +37,15 @@ config = None
 norm = 1e10
 norms = [norm, norm, norm, norm, norm, norm, 100, 100]
 procs = []
-n_user_rate_s = 0.0000001
-n_users = 500
+n_user_rate_s = 0.001
+n_users = 10
+n_client_worker = 10
+n_samples = -1
+n_comp = -1
+predictive = True
 active_monitor = True
+search = None
+replace = None
 
 
 logger = logging.getLogger("Config")
@@ -55,6 +61,12 @@ def process_args():
     global active_monitor
     global dimx
     global n_coeff
+    global n_client_worker
+    global n_users
+    global n_samples
+    global search
+    global replace
+    global predictive
     args = sys.argv[1:]
     for i,j in zip(args, args[1:] + ['']):
         if i == "--twod" or i == "-2d":
@@ -76,6 +88,18 @@ def process_args():
             n_lstm_out = int(j)
         elif i == "--n_entries":
             n_entries = int(j)
+        elif i == "--n_client_worker":
+            n_client_worker = int(j)
+        elif i == "--n_users":
+            n_users = int(j)
+        elif i == "--n_samples":
+            n_samples = int(j)
+        elif i == "--search":
+            search = j
+        elif i == "--replace":
+            replace = j
+        elif i == "--predictive":
+            predictive = "true" in j.lower()
         elif i == "--help" or i == "-h":
             usage()
             exit()
@@ -87,24 +111,22 @@ def do_action(x_prior, host=None):
     global tasks
     tasks = get_config('lqn-tasks') if not len(tasks) else tasks
     ids = find(get_config("lqn-hosts"), host)
-    pred = convert_lqn([p[0] for p in x_prior], len(tasks))
-    thresh_cfg = sublist(get_config("lqn-thresholds"),ids)
+    pred = convert_lqn([p[0] for p in x_prior], host)
+    thresh_cfg = sublist(get_config("lqn-thresholds"), ids)
     ttypes = [[k for k,v in i.items()][0] for i in thresh_cfg]
     thresholds = [float([v for k,v in i.items()][0]) for i in thresh_cfg]
-    logger.info("prediction,thresholds = " + str((pred,thresholds)))
-
+    logger.info("prediction,thresholds,host = " + str((pred,thresholds,host)))
     for i,threshold in zip(range(len(thresholds)), thresholds):
-        #name = [k for k,v in tasks[i].items()][0]
-        logger.info("prior.ids,pred.i,ts ="+str((ids,pred[i+ids[0]],threshold)))
+        logger.info("prior.ids,pred[i],t ="+str((ids,pred[i+ids[0]],threshold)))
         if crossed(pred[i + ids[0]], threshold, ttypes[i]): 
             res_info = solve_lqn(i + ids[0]) # search for LQN input value
-            for j,res in zip(range(len(tasks)), res_info[0:len(tasks)]):
+            for j,res in zip(range(len(tasks)), res_info[len(tasks):]):
                 resname = [k for k,v in tasks[j].items()][0]
                 logger.info("Resource task,pred,j = " + str((tasks[j],res,j)))
-                if int(res) > tasks[j][resname]:
+                if round(res) > tasks[j][resname]:
                     run_actions(get_config("lqn-provision-actions"), j)
                     tasks[j][resname] = tasks[j][resname] + 1
-                elif int(res) < tasks[j][resname] and tasks[j][resname] > 0:
+                elif round(res) < tasks[j][resname] and tasks[j][resname] > 0:
                     run_actions(get_config("lqn-deprovision-actions"), j)
                     tasks[j][resname] = tasks[j][resname] - 1
 
@@ -115,11 +137,12 @@ def crossed(v, t, ttype):
 
 def solve_lqn(metric_id):
     # Search for LQN input that produces the lowest value of associated metric
-    to_lqn = lambda lst: reduce(lambda a,b: b if a==0 else "["+str(a)+","+str(b)+"]", lst)
+    lqnstr = lambda a,b: "["+str(a if a>0 else 1)+","+str(b if a>0 else 2)+"]"
+    to_lqn = lambda lst: reduce(lqnstr, lst)
     for task in tasks:
         for k,v in task.items():
             logger.info("lqn.input = " + str({k: v}))
-            os_run(get_config(['model-update-cmd'], [k, to_lqn([v,v+1])]))
+            os_run(get_config(['model-update-cmd'], [k, to_lqn([v-1, v+1])]))
 
     out = os_run(get_config('model-solve-cmd'))
     logger.info("metric_id="+str(metric_id)+", rows="+str(len(out.split("\n"))))
@@ -133,15 +156,21 @@ def solve_lqn(metric_id):
 
 
 
-def convert_lqn(msmts, n_comp):
+def convert_lqn(msmts, host):
+    global n_comp
+    state = load_state()
+    lqnout =solve_lqn(0) if n_comp<0 or not state or not host in state else None
+    n_comp = len(lqnout) if n_comp < 0 else n_comp
     msmts = [array(m).T[0] for m in msmts]
     msmts.extend([msmts[-1] for i in range(n_comp - len(msmts))])
     logger.debug("msmts,shape = " + str((msmts, shape(msmts))))
-    state = load_state()
-    model = state['lqn-ekf-model'] if 'lqn-ekf-model' in state else None
+    if not state or not host in state:
+       m, c = solve_linear(lqnout, msmts)
+       merge_state({host: {"lqn-ekf-model": {"m": m, "c": float(c)}}})
+       state = load_state()
+    model = state[host]['lqn-ekf-model'] if host in state else None
     (m, c) = (model['m'], model['c']) if model else (1, 0)
-    logger.debug("m,c,pca = " + str((m, c)))
-    return array(dot(getpca(n_comp, msmts).T, m)).T[0]
+    return c + array(dot(getpca(n_comp, msmts).T, m)).T[0]
 
 
 
@@ -187,11 +216,11 @@ def run_action(action):
         logger.debug("res = " + str(res) + ", count = " + str(count) + 
             ", run_state = " + str(run_state) + ", action = " + str(action))
         if int(count) > int(run_state[res]):
-            for step in get_steps("provision-cmds", res):
+            for step in get_steps("lqn-provision-cmds", res):
                 os_run(step)
             run_state[res] = int(run_state[res]) + 1
         elif int(count) < int(run_state[res]):
-            for step in get_steps("deprovision-cmds", res):
+            for step in get_steps("lqn-deprovision-cmds", res):
                 os_run(step)
             run_state[res] = int(run_state[res]) - 1
     save_state(run_state)
@@ -251,6 +280,7 @@ def set_variables(val):
         for k, v in config['variables'].items():
             k = "<" + str(k) + ">"
             val = set_variable(val, k, v)
+    val = set_variable(val, search, replace) if search and replace else val
     return val
 
 
@@ -292,14 +322,15 @@ def close_async():
 
 
 def normalize(v):
-    (factor, s) = (1, v[1])
+    (factor, i, s) = (1, v[0], v[1])
     if "g" in v[1] and v[1].replace("g", "").isdigit():
         (factor, s) = (10e9, v[1].replace("g", ""))
     elif "m" in v[1] and v[1].replace("m", "").isdigit():
         (factor, s) = (10e6, v[1].replace("m", ""))
     elif "k" in v[1] and v[1].replace("k", "").isdigit():
         (factor, s) = (10e3, v[1].replace("k", ""))
-    return float32(s)*factor/norms[v[0] % 8] if s.isdigit() else 0
+    n = float32(s)*factor/norms[i%psize] if s.replace('.','').isdigit() else 0
+    return n
 
 
 
@@ -352,7 +383,7 @@ def test_linear():
     msmts = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
     print("lqnval,msmts = " + str((lqnval, msmts)))
     m, c = solve_linear(lqnval, msmts)
-    merge_state({"lqn-ekf-model": {"m": m, "c": float(c)}})
+    merge_state({"lqn-ekf-model": {None: {"m": m, "c": float(c)}}})
     state = load_state()
     model = state['lqn-ekf-model'] if 'lqn-ekf-model' in state else None
     (m, c) = (model['m'], model['c']) if model else (1, 0)

@@ -117,7 +117,7 @@ def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None, H=None):
             ekf.predict()
             priors[j].append(ekf.x_prior)
             ekf.update(z, hjacobian, h, R if len(shape(R)) else ekf.R)
-    logger.info("priors,z_data = " + str((priors, z_data)))
+    logger.info("priors,z_data,ekfs = " + str((priors, z_data,len(ekfs))))
     return (ekf, priors)
 
 

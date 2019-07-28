@@ -4,9 +4,9 @@
 # Invoked as: C:\Program Files (x86)\LQN Solvers\lqngen.exe 
 
 $nUsers = [10]
-$nWebServers = [1]
-$nDb = [1]
-$nSearch = [1]
+$nWebServers = [52,54]
+$nDb = [51,53]
+$nSearch = [1,2]
 
 G "C:\Program Files (x86)\LQN Solvers\lqngen.exe" 			# Model comment 
 1e-005			# Convergence test value.
@@ -98,11 +98,12 @@ E 0
 -1
 
 R 0
-$uSearch
 $uDb
-$nWebServers
-$nDb
+$uSearch
+$uSess
 $nSearch
+$nDb
+$nWebServers
 $nUsers
 $uSess
 $uBiz

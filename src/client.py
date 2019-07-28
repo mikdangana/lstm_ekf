@@ -26,7 +26,7 @@ def fetch(session, index, cmd_cfg):
 
 async def get_data_asynchronous(cmd_cfg):
     print("{0:<30} {1:>20}".format("Start-time", "Elapsed"))
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=n_client_worker) as executor:
         with requests.Session() as session:
             # Set any session parameters here before calling `fetch`
             loop = asyncio.get_event_loop()

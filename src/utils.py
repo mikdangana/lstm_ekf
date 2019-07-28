@@ -20,6 +20,7 @@ logging.basicConfig(filename='lstm_ekf.log',
 
 state_file = "lstm_ekf.state"
 procs = []
+cmd_range = None
 
 
 def os_run(cmd):
@@ -40,6 +41,13 @@ def os_run(cmd):
         ex = traceback.format_exc()
         logger.error("Error running '"+ str(cmd) +"': " + str(ex))
     return res 
+
+
+def os_run_path(path, regex, cmd):
+    for r, d, f in os.walk(path):
+        for file in f:
+            if re.search(regex, file):
+                os_run(cmd + os.path.join(path, file))
 
 
 def utilization(key, states, stateinfo): 
@@ -240,9 +248,12 @@ if __name__ == "__main__":
     print(symmetric([1,2,3], [4,5,6]))
     print(symmetric([1,2,3]))
     print(symmetric([1,2,3,4], [5,6,7,8,9,10]))
-    (x, y) = (array([5,3,8]), array([[random() for i in range(24)] for j in range(10)]))
+    y = array([[random() for i in range(24)] for j in range(10)])
+    y1 = array([[y[j][i]+random()*0.001 for i in range(24)] for j in range(10)])
+    x = array([5,3,8])
     (m, c) = solve_linear(x, y)
-    print("y,sol,x = " + str((y, dot(getpca(len(x),y).T,m), x)))
+    print("y,sol,x = " + str((y, dot(getpca(len(x),y1).T,m), x)))
+    #print("y,test(x) = " + str((y, dot(m, x))))
     print(os_run("wine lqns testbed.lqn"))
     print(sublist([1,2,3,4,5], [1,3]))
     print(merge_state({"abc": {"def": 1, "ghi": 2}}))

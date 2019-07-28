@@ -42,13 +42,14 @@ def measurements(host = ""):
     cmd = cmd + " | grep \"^ *[0-9]\""
     if host and len(host):
         cmd = get_config("login-"+host) + " -o LogLevel=QUIET -t '" + cmd + "'"
-    pstats = os_run(cmd + " | awk '{print $5,$5,$5,$5,$6,$7,$9,$10}' | sort -k 7 -nr")
+    cmd = cmd + " | awk '{print $5,$5,$5,$5,$6,$7,$9,$10}' | sort -k 7 -nr"
+    pstats = os_run(cmd)
     pstats = pstats.split() if pstats else ""
     logger.info(str(len(pstats)) + " measurements retrieved")
     pstatsf = list(map(normalize, zip(range(len(pstats)), pstats)))
     pstatsf = pstatsf[0:n_msmt]
     #pstatsf = pstatsf[0:dimz] + list(zeros(dimz))
-    logger.info("parsed measurements, size=" + str((pstatsf,len(pstatsf))))
+    logger.info("parsed measurements, size=" + str(len(pstatsf)))
     pickleadd(host + "measurements.pickle", array(pstatsf).flatten())
     return pstatsf if len(pstatsf)==n_msmt else []
 
@@ -367,9 +368,10 @@ def generate_traffic():
     global has_traffic
     has_traffic = True
     for endp in ["db-endpoint", "search-endpoint"]:
-        sleep(10)
+        #sleep(10)
         f = io.StringIO()
         with redirect_stdout(f):
+            #os_run(re.sub(r'<endpoint>', get_config(endp), get_config("traffic-cmd"))) #test_client(endp)
             test_client(endp)
         pickledump("clientout.pickle", f.getvalue())
         os_run("tar rvf pickles_" + endp + ".tar *.pickle")
@@ -517,7 +519,8 @@ def create_monitor(host):
     has_traffic = True
     def monitor_loop():
         sample = 0
-        while has_traffic: #for sample in range(n_users): 
+        logger.info("n_samples = " + str(n_samples))
+        while has_traffic or sample < n_samples: 
             monitor_host(host)
             sample = sample + 1
             logger.info("Sample " + str(sample) + " done")
@@ -534,14 +537,23 @@ def monitor_host(host):
     if not host in monitor_msmts:
         tune_host(host)
     if active_monitor:
-        do_action(update_ekf(ekfs[host], [monitor_msmts[host][-1]])[1], host)
+        if predictive:
+            priors = update_ekf(ekfs[host], monitor_msmts[host])[1]
+            msmts = monitor_msmts[host][1:] + [list(priors[-1][-1].T[0])]
+        else:
+            msmts = monitor_msmts[host]
+        if len(msmts):
+            do_action([[array([m]).T] for m in msmts], host)
     monitor_msmts[host].append(measurements(host))
-    ekf_accuracies(ekfs[host], monitor_msmts[host][-1], None, "", False, host)
+    if predictive:
+        ekf_accuracies(ekfs[host],monitor_msmts[host][-1],None,"",False,host)
 
 
 
 def tune_host(host):
     monitor_msmts[host] = []
+    if not predictive:
+        return
     # Tune host ekf
     def label_fn(model, X, labels=[], sample_size=10):
         return bootstrap_labels(model, X, labels, sample_size, "boot", host)
@@ -551,10 +563,6 @@ def tune_host(host):
     coeffs = predict_coeffs(lstm_model, history[-n_entries:], X)
     logger.info("coeffs = " + str(coeffs[-1]))
     ekfs[host] = [build_ekf(coeffs[-1], history), build_ekf([], history)]
-    lqn_vals = solve_lqn(0)
-    logger.info("msmts = " + str(monitor_msmts[host]))
-    m, c = solve_linear(lqn_vals, monitor_msmts[host])
-    merge_state({"lqn-ekf-model": {"m": m, "c": float(c)}})
     logger.info("Tuning done for host: " + host)
  
 
@@ -566,6 +574,9 @@ if __name__ == "__main__":
         run_test_convergence(next(sys.argv, ["--test-convergence", "-tc"]))
     elif "--track-model" in sys.argv or "-tm" in sys.argv:
         run_model_tracking_tests()
+    elif "--test-clean" in sys.argv:
+        for j in range(len(get_config("lqn-deprovision-actions"))):
+            run_actions(get_config("lqn-deprovision-actions"), j)
     else:
         run_monitors()
     if "--generate-traffic" in sys.argv or "-g" in sys.argv:
