@@ -2,7 +2,6 @@ from pylab import *
 from numpy import array, gradient, mean, std, log
 import numpy as np
 from scipy import stats
-#from math import log
 from getopt import getopt, GetoptError
 from pandas import DataFrame
 from surface3d import plotsurface
@@ -38,9 +37,9 @@ def loadfiles(filenames):
 def parse_client_info(filename):
     txt = pickleload(filename)
     if not isinstance(txt, str):
-        return []
+        return txt
     toks = list(filter(lambda s: s.endswith("s"), re.split("[\s]+", txt)))[2:]
-    return [float(i.replace("s","")) for i in toks]
+    return [[float(i.replace("s",""))] for i in toks]
 
 
 def parse_string(s):
@@ -62,7 +61,6 @@ def showplot():
 def plotpredictions(args):
     predictions, metric = load(args[0] if len(args) else "")
     x = list(map(lambda p: p[0][metric], predictions))
-    #y = list(map(lambda p: sum(p[1].T[0])/len(p[1].T[0]), predictions))
     y = list(map(lambda p:p[1].T[0][0], predictions))
 
     fig, host = subplots()
@@ -77,7 +75,6 @@ def plotpredictions(args):
 
     lgd = ['step(x,50)', 'exp(x)', 'sin(x)', 'erf(x)']
 
-    #legend((xline, yline), (lgd[metric], 'EKF.x_prior'))
     legend((lgd[metric if metric<len(lgd) else -1], 'EKF.x_prior'))
     title('EKF Prior Prediction vs ' + lgd[metric if metric<len(lgd) else -1])
     showplot()
@@ -106,18 +103,16 @@ def formatlines(data, isGradient, indices, intervals, normalize, n):
     print("formatlines.n,shape(data) = " + str((n, len(shape(data[n])))))
     if len(indices):
         if isGradient:
-            data=[[gradient(array([r[int(i)] for r in data[n]])) for i in indices]]
+            grad = lambda r,i : gradient(array([r[int(i)] for r in data[n]]))
+            data = [[grad(r, i) for i in indices]]
         elif len(shape(data[n])) > 1:
             data[n] = list(filter(lambda r: len(shape(r)), data[n]))
             data[n] = [[r[int(i)] for r in data[n]] for i in indices]
             print("formatlines.data[n] =" +str(data[n][0:min(len(data[n]),10)]))
-    #elif (len(data[n]) and len(shape(data[n])) > 1): 
-     #   data[n] = [r[-1] for r in data[n]]
 
     print("formatlines.intervals,len = " + str((intervals, len(intervals))))
     if len(intervals):
-        intervals = intervals[0] if len(intervals)>1 else intervals 
-        (start, end) = intervals.split(":")
+        (start, end) = intervals[0].split(":")
         data[n] = data[n][int(start):int(end)]
         print("formatlines.data.intervals.len = " + str(len(data[n])))
 
@@ -139,7 +134,6 @@ def parse_line_args(args):
     intervals = list(filter(lambda f: ":" in f, args))
     indices = list(filter(lambda f : f.isdigit(), args))
     (yerr, args) = parse_err_args(args, indices)
-    isfile =lambda f: not f.isdigit() and not f.startswith("-") and not ":" in f
     filenames = list(filter(isfile, args))
     data = loadfiles(filenames)
     if not len(data):
@@ -151,10 +145,20 @@ def parse_line_args(args):
     return (data, filenames, isGradient, yerr)
 
 
+def isfile(f): 
+    return not f.isdigit() and not f.startswith("-") and not ":" in f and not "|" in f
+
+
 def parse_err_args(args, indices):
     if "--err" in args:
-        i = args.index("--err")
-        (data, args) = ([pickleload(args[i+1])], args[0:i] + args[i+2:])
+        (i, data) = (args.index("--err"), [])
+        while i+len(data)+1 < len(args) and isfile(args[i + len(data) + 1]):
+            file = args[i + len(data) + 1]
+            if 'clientout' in file and 'pickle' in file:
+                data.append(parse_client_info(file))
+            else:
+                data.append(pickleload(file))
+        args = args[0:i] + args[i+len(data)+1:]
         if len(indices):
             if len(indices)==1:
                 data = [[r[int(indices[0])] for r in f] for f in data]
@@ -239,12 +243,8 @@ def convergence(data):
         stds.append(std(data[i*step:n]))
         #s = std(stds)
         win = stds[-window:]
-        m = mean(win) #stds[-window] if len(stds)>=window else stds)
-        (l, u) = (m-t, m+t) #stats.norm.interval(t, loc=m, scale=1)
-        #win = list(map(abs, data[i * step: n]))
-        #grads = list(map(lambda x:abs(x[1]-x[0]), zip(stds[0:-1],stds[1:])))
-        #print("win = " + str(win) + ", bounds = " + str((l,u)) + ", stds = " + str(stds) + ", grads = " + str(grads) + ", stds.mean = " + str(mean(stds)))
-        #confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
+        m = mean(win) 
+        (l, u) = (m-t, m+t) 
         confidence = len(list(filter(lambda d: d>=l and d<=u, win)))/len(win)
         stat.append(confidence)
     print("confidences = " + str(stat) + ", stds = " + str(stds))
@@ -274,13 +274,71 @@ def plotscatter(filenames):
     y = array(mapl(lambda d: d[0][0:dimx], data)).flatten()
     w = array(mapl(lambda i: list(range(dimx)), range(len(data)))).flatten()
     z = array(mapl(lambda d: mapl(scalar, d[1][0:dimx]), data)).flatten()
-    print("scatter.x.len = " + str(len(x)) + ", y = " + str(len(y)) + ", z = " + str(len(z)) + ", w = " + str(len(w)))
+    print("scatter.x,y,z,w.len = " + str((len(x),len(y),len(z),len(w))))
     data = {'a': x, 'b': y, 'c': w, 'd': z}
     scatter('a', 'b', c='c', s='d', data=data)
     xlabel('Iteration')
     ylabel('Accuracy by perf metric')
     title('Bootstrap Accuracies Per Process')
     showplot()
+
+
+def plot_hist(args):
+    (data, files, isGradient, yerr) = parse_line_args(args)
+    if not data: 
+        return plotlines(args)
+    data = groupby(len(files), data)
+    (ind, width, ns) = (np.arange(len(data)), 0.25, len(data))
+    fig, ax = plt.subplots()
+    for c in range(len(data[0][0] if len(data) else [])):
+        mean = [sum([r[c] for r in data[n]]) for n in range(len(data))]
+        std = [(sum([r[c] for r in yerr[n]]) if yerr else 0) for n in range(ns)]
+        print("plot_hist().mean,std = " + str((mean, std)))
+        lbl = get(nextv(args, '--legend', 'Metric').split("|"), c)
+        rect = ax.bar(ind-(c*width),mean,width, yerr=std, label=lbl)
+    ax.set_ylabel(nextv(args, '--yaxis', 'Value'))
+    ax.set_title(nextv(args, '--title', 'Title'))
+    ax.set_xticks(ind)
+    lbl = lambda f: re.sub('[0-9\.]+.pickle','',f.replace('predictive',''))
+    ax.set_xticklabels([lbl(f) for f in files])
+    ax.legend()
+    fig.tight_layout()
+    showplot()
+
+
+def get(lst, i, default=None):
+    last = lst[-1] if len(lst) else []
+    return lst[i] if i < len(lst) else (default if default else last)
+
+
+def autolabel(ax, rects, xpos='center'):
+    """
+    Attach a text label above each bar in *rects*, displaying its height.
+
+    *xpos* indicates which side to place the text w.r.t. the center of
+    the bar. It can be one of the following {'center', 'right', 'left'}.
+    """
+
+    ha = {'center': 'center', 'right': 'left', 'left': 'right'}
+    offset = {'center': 0, 'right': 1, 'left': -1}
+
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate('{}'.format(height),
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(offset[xpos]*3, 3),  # use 3 points offset
+                    textcoords="offset points",  # in both directions
+                    ha=ha[xpos], va='bottom')
+
+
+def groupby(k, data):
+    data = data if iscollection(data[0], 0) else [[[r] for r in d] for d in data]
+    (n, rk, nk) = (range(len(data)), range(k), len(data)/k)
+    grps = [[(data[i] if int(i/nk)==f else []) for i in n] for f in rk]
+    conc = lambda a,b:[get(a,i)+get(b,i) for i in range(max(len(a),len(b)))]
+    grps = list(map(lambda g: list(reduce(conc, g)), grps))
+    print("groupby.grps,len(data),k = " + str((list(map(len, grps)),list(map(len, data)),k)))
+    return grps
 
 
 def plot_all(path, to_plot=True):
@@ -290,7 +348,6 @@ def plot_all(path, to_plot=True):
     (sums, maxs, mins, count) = load_path(path)
     data = {k:array(v)/count[k] for k,v in sums.items()}
     for file in (data.keys() if to_plot else []):
-        print("plot_all().data[6] = " + str((file,count[file],path,to_plot,[r[6] for r in data[file]])))
         fname = os.path.join(path, file)
         fig_file = fname.replace(".pickle", ".png")
         yerr = array(subm(maxs[file], mins[file]) if file in maxs else [])/2
@@ -337,25 +394,25 @@ def iscollection(vs, i):
 def addm(v1, v2):
     (a, b) = (v1, v2) if len(v1) >= len(v2) else (v2, v1)
     addfn = lambda v,w: addm(v, w) if iscollection(v1, 0) else v + w
-    return [addfn(v,(v if i>=len(b) else b[i])) for i,v in zip(range(len(a)), a)]
+    return [addfn(v,(v if i>=len(b) else b[i])) for i,v in zip(range(len(a)),a)]
 
 
 def subm(v1, v2):
     (a, b) = (v1, v2) if len(v1) >= len(v2) else (v2, v1)
     subfn = lambda v,w: subm(v,w) if iscollection(v1, 0) else v - w
-    return [subfn(v,(v if i>=len(b) else b[i])) for i,v in zip(range(len(a)), a)]
+    return [subfn(v,(v if i>=len(b) else b[i])) for i,v in zip(range(len(a)),a)]
 
 
 def maxv(v1, v2):
     (a, b) = (v1, v2) if len(v1) >= len(v2) else (v2, v1)
     maxfn = lambda v,w: maxv(v,w) if iscollection(v1, 0) else max(v, w)
-    return [maxfn(v, v if i>=len(b) else b[i]) for i,v in zip(range(len(a)), a)]
+    return [maxfn(v, v if i>=len(b) else b[i]) for i,v in zip(range(len(a)),a)]
 
 
 def minv(v1, v2):
     (a, b) = (v1, v2) if len(v1) >= len(v2) else (v2, v1)
     minfn = lambda v,w: minv(v,w) if iscollection(v1, 0) else min(v, w)
-    return [minfn(v, v if i>=len(b) else b[i]) for i,v in zip(range(len(a)), a)]
+    return [minfn(v, v if i>=len(b) else b[i]) for i,v in zip(range(len(a)),a)]
 
 
 def to_line(fname, col, yerr):
@@ -379,20 +436,20 @@ def trim_axs(axs, N):
 
 def plotmulti(args):
     (data, filenames, isGradient, yerr) = parse_line_args(args)
-    if not data: # or len(filenames) <= 1:
+    if not data: 
         return plotlines(args)
-    #printstats("plotmulti()", data)
     (lgd, styles) = (legend(isGradient, filenames), ['r--', 'b','g','y'])
     (x,n) = (data[0],1) if '--vs' in args else (arange(0, len(data[0]), 1),0)
-    (figsize, i, delta) = ((8,4), 0, 0.11)
+    (figsize, i, delta, vtxt) = ((8,3), 0, 0.11, nextv(args,'--yaxis','Value'))
     (cols, rows) = (2, 1 if len(filenames)==1 else round(len(filenames)/2))
     fig1, axs = plt.subplots(rows,cols,figsize=figsize, constrained_layout=True)
-    fig1.text(0.5, 0.04, nextv(args, '--xaxis', 'Interval'), ha='center')
-    fig1.text(0.04, 0.5, nextv(args, '--yaxis', 'Value'), va='center', rotation='vertical')
+    fig1.text(0.30, 0.04, nextv(args, '--xaxis', 'Interval'), ha='center')
+    fig1.text(0.04, 0.5, vtxt, va='center', rotation='vertical')
     axs = trim_axs(axs, len(filenames))
     for ax, y, file in zip(axs, data[n:], filenames):
         if yerr:
-            ax.errorbar(x, y, every(yerr[filenames.index(file)], 10), solid_capstyle='projecting', capsize=5, ecolor='grey')
+            (ye, cap) = (every(yerr[filenames.index(file)], 10), 'projecting')
+            ax.errorbar(x, y, ye, solid_capstyle=cap, capsize=2, ecolor='grey')
         else:
             ax.plot(x, y, '', ls='-', ms=4)
         ax.set_title(nextv(args, '--title', 'Subplot ') + str(suffix(file)))
@@ -428,7 +485,7 @@ def usage():
 
 def main():
     try:
-        opts, args = getopt(sys.argv[1:], "hslpa:3", ["help", "scatter", "line", "predictions", "surface3d", "all", "multi"])
+        opts, args = getopt(sys.argv[1:], "hslpat:3", ["help", "scatter", "line", "predictions", "surface3d", "all", "multi", "hist"])
     except GetoptError as err:
         print(str(err))
         usage()
@@ -447,6 +504,8 @@ def main():
             plot_all(args)
         elif o in ( "-m", "--multi" ):
             plotmulti(arg)
+        elif o in ( "-t", "--hist" ):
+            plot_hist(arg)
         else:
             usage()
     if not len(opts):
