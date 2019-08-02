@@ -342,6 +342,7 @@ def plot_radar(args):
     plt.show()
 
 
+>>>>>>> fd3bdd5820e66871db10d61a15f57dde19a69aa2
 def plot_hist(args):
     (data, files, isGradient, yerr) = parse_line_args(args)
     if not data: 
@@ -389,6 +390,8 @@ def label(fname):
     return f
 
 
+=======
+>>>>>>> fd3bdd5820e66871db10d61a15f57dde19a69aa2
 def get(lst, i, default=None):
     last = lst[-1] if len(lst) else []
     return lst[i] if i < len(lst) else (default if default else last)
@@ -420,7 +423,7 @@ def groupby(k, data):
     grps = [[(data[i] if int(i/nk)==f else []) for i in n] for f in rk]
     conc = lambda a,b:[get(a,i)+get(b,i) for i in range(max(len(a),len(b)))]
     grps = list(map(lambda g: list(reduce(conc, g)), grps))
-    print("groupby.grps,len(data),k = " + str((list(map(len,grps)),len(data),k)))
+    print("groupby.grps,len(data),k = " +str((list(map(len,grps)),len(data),k)))
     return grps
 
 
