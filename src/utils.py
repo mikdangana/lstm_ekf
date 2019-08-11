@@ -167,8 +167,14 @@ def sublist(lst, ids):
 
 
 def getpca(n_comp, y): 
+    global pca
     pca = PCA(n_components=n_comp)
     return pca.fit_transform(array(y).T) 
+
+
+def getpca_inv(x): 
+    #pca = PCA(n_components=n_comp)
+    return pca.inverse_transform(array(x).T) 
 
 
 def project(n_comp, y, m):
@@ -244,17 +250,48 @@ def symmetric(diag, half = None):
     return upper + transpose(upper) + twod(dmatrix)
 
 
-if __name__ == "__main__":
+def test_miscellaneous():
     print(symmetric([1,2,3], [4,5,6]))
     print(symmetric([1,2,3]))
     print(symmetric([1,2,3,4], [5,6,7,8,9,10]))
-    y = array([[random() for i in range(24)] for j in range(10)])
-    y1 = array([[y[j][i]+random()*0.001 for i in range(24)] for j in range(10)])
-    x = array([5,3,8])
-    (m, c) = solve_linear(x, y)
-    print("y,sol,x = " + str((y, dot(getpca(len(x),y1).T,m), x)))
-    #print("y,test(x) = " + str((y, dot(m, x))))
     print(os_run("wine lqns testbed.lqn"))
     print(sublist([1,2,3,4,5], [1,3]))
     print(merge_state({"abc": {"def": 1, "ghi": 2}}))
     print("occurrences = " + str(occurrences([1,2,3], [4,5,2])))
+    print("test_miscellaneous() done")
+
+
+def test_pca():
+    (sz, n) = (24, 10)
+    y = array([[random() for i in range(sz)] for j in range(n)])
+    y1 = array([[y[j][i]+random()*0.0001 for i in range(sz)] for j in range(n)])
+    x = array([5,3,8])
+    (m, c) = solve_linear(x, y)
+    #print("y,sol,x = " + str((y, dot(getpca(len(x),y1).T,m), x)))
+    #sums=[sum(abs(getpca(i,y1)[0]-getpca(i,getpca_inv(getpca(i,y1).T).T)[0])) for i in [3,5,6,7,9]]
+    lqn_p1 = []
+    lqn_ps = [[random()*100,random()*100,random()*100] for i in range(100)]
+    ys = [array([[random()*5 for i in range(sz)] for j in range(n)]) for y in lqn_ps]
+    for lqn_p, y in zip(lqn_ps, ys):
+        pca_y = getpca(len(lqn_p), y)
+        #print("pca_y = " + str(pca_y.shape))
+        #print("y,y1 = " + str((y.shape, getpca_inv(pca_y.T).shape)))
+        noise = array([[random()*0.001 for i in range(sz)] for j in range(n)]) 
+        pca_y1 = getpca(len(lqn_p), getpca_inv(pca_y.T).T + noise)
+        (m, c) = solve_linear(lqn_p, y)
+        lqn_p1.append(dot(pca_y1.T, m))
+        #print("y,sol,x = " + str((y, lqn_p1[-1], lqn_p)))
+    pickledump("pca_lqnp.pickle", lqn_ps)
+    pickledump("pca_lqnp1.pickle", [p1.T[0] for p1 in lqn_p1])
+    pickledump("pca_lqn_err.pickle", [abs(p1.T[0]-p) for p1,p in zip(lqn_p1,lqn_ps)])
+    print("Err.mean = "+str(sum([sum(abs(p-p1.T[0])) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)))
+    print("P.mean = "+str(sum([sum(abs(p-zeros(len(p),1))) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)))
+    print("Output in pca_lqnp(1).pickle files")
+    print("test_pca() done")
+
+
+if __name__ == "__main__":
+    if "--testpca" in sys.argv:
+        test_pca()
+    else:
+        test_miscellaneous()

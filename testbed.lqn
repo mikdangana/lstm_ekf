@@ -4,9 +4,14 @@
 # Invoked as: C:\Program Files (x86)\LQN Solvers\lqngen.exe 
 
 $nUsers = [10]
-$nWebServers = [52,54]
-$nDb = [51,53]
-$nSearch = [1,2]
+$nWebServers = [106,108]
+$nDb = [1,2]
+$nSearch = [80,82]
+$sCpu0 = [0.001]
+$sProc0 = [0.001]
+$sProc1 = [0.001]
+$sProc2 = [0.001]
+$sProc3 = [0.001]
 
 G "C:\Program Files (x86)\LQN Solvers\lqngen.exe" 			# Model comment 
 1e-005			# Convergence test value.
@@ -25,11 +30,11 @@ P 0
 #                   | s quantum {processor-sharing (or round-robin)} 
 #   multiplicity = m value {multiprocessor}
 #                | i {infinite or delay server}
-  p c0 f i
-  p p0 f i 
-  p p1 f i
-  p p2 f
-  p p3 f i
+  p c0 s $sCpu0
+  p p0 s $sProc0
+  p p1 s $sProc1
+  p p2 s $sProc2
+  p p3 s $sProc3
 -1
 
 T 0

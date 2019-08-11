@@ -1,0 +1,8 @@
+INFO 2019-07-22 06:31:12,626 in load_config() config.py-239: yaml file = /home/ubuntu/woodside/lstm_ekf/src/../lstm_ekf.yaml 
+
+INFO 2019-07-22 06:31:12,636 in init_config_variables() config.py-330: init_config_variables() done 
+
+INFO 2019-07-22 06:33:37,420 in load_config() config.py-239: yaml file = /home/ubuntu/woodside/lstm_ekf/src/../lstm_ekf.yaml 
+
+INFO 2019-07-22 06:33:37,430 in init_config_variables() config.py-330: init_config_variables() done 
+
