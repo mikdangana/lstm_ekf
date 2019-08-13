@@ -2,6 +2,7 @@ import os, re, sys, traceback
 import yaml, logging, logging.handlers
 import pickle, subprocess
 from functools import reduce
+from math import floor
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract, size, append, transpose
 from numpy import gradient, mean, std, outer, vstack, concatenate
@@ -187,7 +188,13 @@ def solve_linear(x, ys, m_c = None):
         return (m_c[0], m_c[1]) if m_c else (1, 0)
     y_pc = getpca(len(x), ys)
     logger.debug("y=" + str(shape(ys)) + ", y_pc = " + str(shape(y_pc)))
-    (m, c) = (lstsq(y_pc.T, array(x).reshape(len(x),1), rcond=None)[0], 0)
+    return solve_linear_pca(x, y_pc)
+
+
+def solve_linear_pca(x, y_pc):
+    #(m, c) = (lstsq(y_pc.T, array(x).reshape(len(x),1), rcond=None)[0], 0)
+    (m, c, _, _) = lstsq(y_pc.T, array(x).reshape(len(x),1), rcond=None)
+    c = array(x).reshape(len(x),1) - dot(y_pc.T, m)
     logger.debug("solve_linear().m,m.y_pc,x) = " + str((m,dot(y_pc.T,m),x)))
     return (m, c)
 
@@ -261,33 +268,55 @@ def test_miscellaneous():
     print("test_miscellaneous() done")
 
 
-def test_pca():
-    (sz, n) = (24, 10)
-    y = array([[random() for i in range(sz)] for j in range(n)])
-    y1 = array([[y[j][i]+random()*0.0001 for i in range(sz)] for j in range(n)])
-    x = array([5,3,8])
-    (m, c) = solve_linear(x, y)
-    #print("y,sol,x = " + str((y, dot(getpca(len(x),y1).T,m), x)))
-    #sums=[sum(abs(getpca(i,y1)[0]-getpca(i,getpca_inv(getpca(i,y1).T).T)[0])) for i in [3,5,6,7,9]]
-    lqn_p1 = []
-    lqn_ps = [[random()*100,random()*100,random()*100] for i in range(100)]
-    ys = [array([[random()*5 for i in range(sz)] for j in range(n)]) for y in lqn_ps]
-    for lqn_p, y in zip(lqn_ps, ys):
-        pca_y = getpca(len(lqn_p), y)
-        #print("pca_y = " + str(pca_y.shape))
-        #print("y,y1 = " + str((y.shape, getpca_inv(pca_y.T).shape)))
-        noise = array([[random()*0.001 for i in range(sz)] for j in range(n)]) 
-        pca_y1 = getpca(len(lqn_p), getpca_inv(pca_y.T).T + noise)
-        (m, c) = solve_linear(lqn_p, y)
-        lqn_p1.append(dot(pca_y1.T, m))
-        #print("y,sol,x = " + str((y, lqn_p1[-1], lqn_p)))
-    pickledump("pca_lqnp.pickle", lqn_ps)
-    pickledump("pca_lqnp1.pickle", [p1.T[0] for p1 in lqn_p1])
-    pickledump("pca_lqn_err.pickle", [abs(p1.T[0]-p) for p1,p in zip(lqn_p1,lqn_ps)])
+def quantize(v, n = 1):
+    if type(v) == list:
+       return [quantize(i) for i in v]
+    elif type(v) == type(array([])):
+       return array([quantize(i) for i in v])
+    return round(v, n)
+
+
+def test_pca(ns = 100, predfn = None):
+    (sz, n, d, lqn_p0, lqn_p1, y1s, ms) = (24, 10, 1, [], [], [], [])
+    lqn_ps = [[random()*ns for i in range(3)] for y in range(2)]
+    lqn_ps = [lqn_ps[floor(i/(ns/2))] for i in range(ns)]
+    #lqn_ps = [[ns - 0.5*y for i in range(3)] for y in range(ns)]
+    #ys = [array([[y/10+random()*0.01 for i in range(sz)] for j in range(n)]) for y in range(ns)]
+    ys = [array([[random()*0.05+ 5*lqn_ps[int(y/(ns/2)*(ns/2))][0] for i in range(sz)] for j in range(n)]) for y in range(ns)]
+    run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn)
+    save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d)
     print("Err.mean = "+str(sum([sum(abs(p-p1.T[0])) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)))
-    print("P.mean = "+str(sum([sum(abs(p-zeros(len(p),1))) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)))
+    print("P.mean = "+str(sum([sum(abs(array(p))) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)))
     print("Output in pca_lqnp(1).pickle files")
     print("test_pca() done")
+
+
+
+def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn):
+    for lqn_p, y in zip(lqn_ps, ys):
+        pca_y = quantize(getpca(len(lqn_p), y))
+        noise = array([[random()*0.001 for i in range(sz)] for j in range(n)]) 
+        y1 = predfn(y) if predfn else y1 + noise
+        pca_y1 = quantize(getpca(len(lqn_p), y1))
+        y1s.append(y1)
+        (m, c) = solve_linear_pca(lqn_p, pca_y)
+        ms.append((m, c))
+        if (len(ms) > d-1):
+            lqn_p1.append(array([[abs(c) for c in r] for r in dot(pca_y1.T, ms[-d][0]) + ms[-d][1]]))
+            lqn_p0.append(dot(pca_y.T, m) + c)
+            print("lqn_p0|1,pca_y,pca_y1 = " + str((lqn_p,lqn_p0[-1],lqn_p1[-1],pca_y.T, pca_y1.T,quantize(y,0),quantize(y1,0))))
+
+
+
+def save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d):
+    pickledump("pca_ms.pickle", [m for m,c in ms])
+    pickledump("pca_msmts.pickle", [y[0] for y in ys])
+    pickledump("pca_kfpriors.pickle", [y[0] for y in y1s])
+    pickledump("pca_lqnp.pickle", lqn_ps)
+    pickledump("pca_lqnp0.pickle", [p0.T[0] for p0 in lqn_p0])
+    pickledump("pca_lqn-kfprior.pickle", [p1.T[0] for p1 in lqn_p1])
+    pickledump("pca_lqnerrors.pickle", [abs(p1.T[0]-p) for p1,p in zip(lqn_p1,lqn_ps[d:])])
+
 
 
 if __name__ == "__main__":

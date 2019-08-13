@@ -342,7 +342,6 @@ def plot_radar(args):
     plt.show()
 
 
->>>>>>> fd3bdd5820e66871db10d61a15f57dde19a69aa2
 def plot_hist(args):
     (data, files, isGradient, yerr) = parse_line_args(args)
     if not data: 
@@ -390,8 +389,6 @@ def label(fname):
     return f
 
 
-=======
->>>>>>> fd3bdd5820e66871db10d61a15f57dde19a69aa2
 def get(lst, i, default=None):
     last = lst[-1] if len(lst) else []
     return lst[i] if i < len(lst) else (default if default else last)

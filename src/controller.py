@@ -549,6 +549,14 @@ def monitor_host(host):
         ekf_accuracies(ekfs[host],monitor_msmts[host][-1],None,"",False,host)
 
 
+def run_test_pca_kf():
+    (host, history) = ("", [])
+    ekfs[host] = [build_ekf([], history)]
+    def predfn(msmts): 
+        priors = update_ekf(ekfs[host], msmts)[1]
+        return to_size(priors[-1], msmts.shape[1], msmts.shape[0])
+    test_pca(100, predfn)
+
 
 def tune_host(host):
     monitor_msmts[host] = []
@@ -577,6 +585,9 @@ if __name__ == "__main__":
     elif "--test-clean" in sys.argv:
         for j in range(len(get_config("lqn-deprovision-actions"))):
             run_actions(get_config("lqn-deprovision-actions"), j)
+    elif "--test-pca-kf" in sys.argv:
+        run_test_pca_kf()
+        sys.exit()
     else:
         run_monitors()
     if "--generate-traffic" in sys.argv or "-g" in sys.argv:
