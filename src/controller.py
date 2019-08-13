@@ -548,6 +548,8 @@ def monitor_host(host):
     if predictive:
         ekf_accuracies(ekfs[host],monitor_msmts[host][-1],None,"",False,host)
 
+# NB: Recommended to run using the following script:
+# rm *.pickle; mkdir pca; for i in {1..10}; do python src/controller.py --test-pca-kf; for x in `ls *.pickle`; do mv $x pca/${x//.pickle/_$i.pickle}; done; done
 
 def run_test_pca_kf():
     (host, history) = ("", [])
