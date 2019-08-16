@@ -33,7 +33,7 @@ def os_run(cmd):
         return res
 
     try:
-        logger.debug("Running cmd " + str(cmd) + ", inst = " + str((isinstance(cmd, list), isinstance(cmd, type("")))))
+        logger.debug("Running cmd,type " + str((cmd, type(cmd))))
         proc = os.popen(cmd + " 2>>lstm_ekf.log")
         res = proc.read()
         proc.close()
@@ -276,12 +276,12 @@ def quantize(v, n = 1):
 
 
 
-def test_pca(ns = 100, predfn = None):
+def test_pca(ns = 100, predfn = None, dopca = False):
     (sz, n, d, lqn_p0, lqn_p1, y1s, ms) = (24, 10, 1, [], [], [], [])
     lqn_ps = [[random()*ns for i in range(3)] for y in range(2)]
     lqn_ps = [lqn_ps[floor(i/(ns/2))] for i in range(ns)]
     ys = [array([msmt(y,ns,sz,lqn_ps) for j in range(n)]) for y in range(ns)]
-    run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn)
+    run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca)
     save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d)
     err = sum([sum(abs(p-p1.T[0])) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)
     p = sum([sum(abs(array(p))) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)
@@ -292,21 +292,27 @@ def test_pca(ns = 100, predfn = None):
 
 
 def msmt(y, ns, sz, lqn_ps):
-    return [random()*0.046+5*lqn_ps[int(y/(ns/2)*(ns/2))][0] for i in range(sz)]
+    #return [random()*0.046+5*lqn_ps[int(y/(ns/2)*(ns/2))][0] for i in range(sz)]
+    return [random()*0.046+5*lqn_ps[y][0] for i in range(sz)]
 
 
-def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn):
-    for lqn_p, y in zip(lqn_ps, ys):
+def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
+    for lqn_p, y, i in zip(lqn_ps, ys, range(len(ys))):
         pca_y = quantize(getpca(len(lqn_p), y))
         noise = array([[random()*0.001 for i in range(sz)] for j in range(n)]) 
-        y1 = predfn(y) if predfn else y1 + noise
-        pca_y1 = quantize(getpca(len(lqn_p), y1))
+        if dopca:
+            y1 = predfn(y) if predfn else y1 + noise
+            pca_y1 = quantize(getpca(len(lqn_p), y1))
+        else:
+            #y1 = predfn(ys[i-len(y):i], lqn_ps[-len(lqn_ps):])
+            ystart = i-len(y) if i>len(y) else 0
+            pstart = i-len(lqn_p) if i>len(lqn_p) else 0
+            y1 = predfn(ys[ystart:i+1], lqn_ps[pstart:i+1])
         y1s.append(y1)
         (m, c) = solve_linear_pca(lqn_p, pca_y)
         ms.append((m, c))
         if (len(ms) > d-1):
-            lqns = dot(pca_y1.T, ms[-d][0]) + ms[-d][1]
-            lqn_p1.append(array([[abs(c) for c in r] for r in lqns]))
+            lqn_p1.append((dot(pca_y1.T,ms[-d][0])+ms[-d][1]) if dopca else y1)
             lqn_p0.append(dot(pca_y.T, m) + c)
 
 
@@ -314,7 +320,7 @@ def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn):
 def save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d):
     pickledump("pca_ms.pickle", [m for m,c in ms])
     pickledump("pca_msmts.pickle", [y[0] for y in ys])
-    pickledump("pca_kfpriors.pickle", [y[0] for y in y1s])
+    pickledump("pca_kfpriors.pickle", [y for y in y1s])
     pickledump("pca_lqnp.pickle", lqn_ps)
     pickledump("pca_lqnp0.pickle", [p0.T[0] for p0 in lqn_p0])
     pickledump("pca_lqn-kfprior.pickle", [p1.T[0] for p1 in lqn_p1])

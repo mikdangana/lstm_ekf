@@ -84,8 +84,12 @@ def read2d(coeffs, width, start, end):
 
 
 # Build and update an EKF using the provided measurement data
-def build_ekf(coeffs, z_data, linear_consts=None): 
+def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx): 
+    global n_msmt
+    global dimx
+    (dimx, n_msmt) = (dx, nmsmt)
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
+    ekf.x = zeros([dimx, 1])
     #ekf.__init__(dimx, n_msmt)
     if len(coeffs):
         coeffs = array(coeffs).flatten()

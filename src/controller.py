@@ -4,7 +4,7 @@ from ekf import *
 from lstm import *
 from client import *
 from time import sleep, time
-from numpy import subtract, concatenate, divide, nan_to_num
+from numpy import subtract, concatenate, divide, nan_to_num, array_equal
 import config
 import threading, sys
 import io, importlib
@@ -560,6 +560,72 @@ def run_test_pca_kf():
     test_pca(100, predfn)
 
 
+
+def run_test_nonpca_kf():
+    global n_msmt
+    global dimx
+    (dimx, n_msmt, host, history) = (3, 24 * 10, "", [])
+    ekfs[host] = [build_ekf([], history, None, n_msmt, dimx)]
+    #ekfs[host][0][0].x = ones([dimx, 1]) * 100
+    def predfn(msmts, lqn_ps): 
+        #undersized = lambda d: not len(d) or len(d)<len(d[0])
+        #if undersized(msmts) or undersized(lqn_ps): 
+        #   return to_size(lqn_ps[-1],1,dimx) if len(lqn_ps) else ones([dimx,1])
+        msmts = array([to_size(m, n_msmt, 1) for m in msmts])
+        lqn_ps = array([to_size(p, dimx, 1) for p in lqn_ps])
+        z_ave = array([sum(c)/4 for c in array(msmts[-5:-1]).T]).T
+        x_ave = to_size(lqn_ps[-2:], 1, dimx) #array([sum(c)/1 for c in array(lqn_ps[-1:]).T]).T
+        #H = lambda x : dot(getH(msmts[-dimx:], lqn_ps[-dimx:]), x)
+        H = getH(z_ave, x_ave)
+        ekfs[host][0][0].x = ekfs[host][0][0].x if len(history) else x_ave
+        print("predfn.zave,kf.x,hx,msmt = "+str((z_ave[-5:],ekfs[host][0][0].x, dot(H,ekfs[host][0][0].x)[0:5], msmts[-1:][-1][-1][-5:])))
+        def Hj(x):
+            (x1,x2) = (x-rnd(dimx,1), x+rnd(dimx,1) if len(lqn_ps)<2 else x_ave)
+            print("Hj.x,x1,x2 = " + str((x, x1, x2)))
+            #dx2 = getH(ones([n_msmt,1]), x2)
+            #dx2 = dx2 + rnd(n_msmt,dimx) if array_equal(dx1, dx2) else dx2
+            (H1, H2) = (H, getH(msmts[-1], x2)) #getH(dot(H,x1), x1), getH(dot(H,x2), x2))
+            (x1, x2) = ([x1 for i in range(n_msmt)],[x2 for i in range(n_msmt)])
+            hj = (H2 - H1)/(to_size(x2,dimx,n_msmt) - to_size(x1,dimx,n_msmt))
+            print("hj,dh,dx,x = " + str((hj.shape, (H2-H1)[0], hj[0],array(x2[0]).T-array(x1[0]).T, x)))
+            return hj
+        Hx = lambda x: dot(H, x)
+        priors = update_ekf(ekfs[host], msmts[-1:], None, None, Hj, Hx)[1]
+        history.append(priors[-1])
+        print("predfn.ekf.x,z = " + str((ekfs[host][0][0].x, ekfs[host][0][0].z[0:5].T)))
+        print("priors[-1],msmt = " + str((priors[-1], msmts[-1:][-1][-1][-5:])))
+        return to_size(priors[-1][-1], 1, dimx) if len(priors[-1]) else zeros([dimx,1])
+    test_pca(100, predfn, False)
+
+
+def eq(v, n):
+    if isinstance(v, list) or type(v) == type(array([])):
+        return reduce(lambda a,b: eq(a,n) and eq(b,n), v)
+    return v == n
+
+
+def rnd(sy, sx):
+    return array([[random()*1e-3 for x in range(sx)] for y in range(sy)])
+     
+
+def cap(data, limit):
+    if isinstance(data, list):
+        return [cap(d, limit) for d in data]
+    elif type(data) == type(array([])):
+        return array([cap(d, limit) for d in data])
+    elif data < 0:
+        return data if data > -limit else -limit
+    return data if data < limit else limit
+
+
+def getH(z, x):
+    x = to_size(x,1,dimx)
+    z = to_size(z,1,n_msmt)
+    H = lstsq(x.T, z.T)[0].T
+    print("getH.z,dot,x = " + str((H.shape, z[0:5].T, dot(H, x)[0:5].T, x)))
+    return H 
+
+
 def tune_host(host):
     monitor_msmts[host] = []
     if not predictive:
@@ -589,6 +655,9 @@ if __name__ == "__main__":
             run_actions(get_config("lqn-deprovision-actions"), j)
     elif "--test-pca-kf" in sys.argv:
         run_test_pca_kf()
+        sys.exit()
+    elif "--test-nonpca-kf" in sys.argv:
+        run_test_nonpca_kf()
         sys.exit()
     else:
         run_monitors()
