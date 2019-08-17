@@ -89,7 +89,7 @@ def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx):
     global dimx
     (dimx, n_msmt) = (dx, nmsmt)
     ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    ekf.x = zeros([dimx, 1])
+    #ekf.x = zeros([dimx, 1])
     #ekf.__init__(dimx, n_msmt)
     if len(coeffs):
         coeffs = array(coeffs).flatten()

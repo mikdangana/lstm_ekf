@@ -276,12 +276,14 @@ def quantize(v, n = 1):
 
 
 
-def test_pca(ns = 100, predfn = None, dopca = False):
+def test_pca(ns = 100, predfn = None, dopca = True):
     (sz, n, d, lqn_p0, lqn_p1, y1s, ms) = (24, 10, 1, [], [], [], [])
     lqn_ps = [[random()*ns for i in range(3)] for y in range(2)]
     lqn_ps = [lqn_ps[floor(i/(ns/2))] for i in range(ns)]
     ys = [array([msmt(y,ns,sz,lqn_ps) for j in range(n)]) for y in range(ns)]
     run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca)
+    if not dopca:
+        (lqn_p1, y1s) = (scale(lqn_p1, lqn_ps), scale(y1s, lqn_ps))
     save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d)
     err = sum([sum(abs(p-p1.T[0])) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)
     p = sum([sum(abs(array(p))) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)
@@ -327,6 +329,19 @@ def save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d):
     pairs = zip(lqn_p1,lqn_ps[d:])
     pickledump("pca_lqnerrors.pickle", [abs(p1.T[0]-p) for p1,p in pairs])
 
+
+def max_min(vs):
+    vs = array(vs).T[0] if len(array(vs).shape) > 2 else array(vs).T
+    return ([max(c) for c in vs], [min(c) for c in vs])
+
+
+def scale(src, tgt):
+    (sx, sn) = max_min(src)
+    (tx, tn) = max_min(tgt)
+    def rng(c):
+        (i, c) = c
+        return (c-sn[i])/(sx[i]-sn[i])*(tx[i]-tn[i])+tn[i]
+    return array([array(list(map(rng, zip(range(len(v)),v)))) for v in src])
 
 
 if __name__ == "__main__":
