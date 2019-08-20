@@ -1,0 +1,1 @@
+for t in `ls *.tar.bk`; do x=${t//.tar.bk/}; rm -fr run_*; tar xvf $t; for p in `find . -name "*.tar" | grep run_`; do tar -C ${p//pickles_*/} -xvf $p; done; python plot.py --all .; mv clientout.pickle "$x.pickle"; mv clientout_err.pickle "$x_err.pickle"; ls -l $x*; done

@@ -1,0 +1,1 @@
+for x in {10..20}; do make stats iter=$x; for i in {1..300}; do curl 'http://34.220.182.47:8878/removesearchendpoint' 1>/dev/null 2>/dev/null; curl 'http://34.220.182.47:8878/removedbendpoint' 1>/dev/null 2>/dev/null; done; done
