@@ -294,7 +294,6 @@ def test_pca(ns = 100, predfn = None, dopca = True):
 
 
 def msmt(y, ns, sz, lqn_ps):
-    #return [random()*0.046+5*lqn_ps[int(y/(ns/2)*(ns/2))][0] for i in range(sz)]
     return [random()*0.046+5*lqn_ps[y][0] for i in range(sz)]
 
 
@@ -306,7 +305,6 @@ def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
             y1 = predfn(y) if predfn else y1 + noise
             pca_y1 = quantize(getpca(len(lqn_p), y1))
         else:
-            #y1 = predfn(ys[i-len(y):i], lqn_ps[-len(lqn_ps):])
             ystart = i-len(y) if i>len(y) else 0
             pstart = i-len(lqn_p) if i>len(lqn_p) else 0
             y1 = predfn(ys[ystart:i+1], lqn_ps[pstart:i+1])

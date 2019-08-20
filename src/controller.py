@@ -573,19 +573,15 @@ def run_test_nonpca_kf():
         z_ave = array([sum(c)/4 for c in array(msmts[-5:-1]).T]).T
         x_ave = to_size(lqn_ps[-2:], 1, dimx)
         H = getH(z_ave, x_ave)
-  #      print("predfn.zave,kf.x,hx,msmt = "+str((z_ave[-5:],ekfs[host][0][0].x, dot(H,ekfs[host][0][0].x)[0:5], msmts[-1:][-1][-1][-5:])))
         def Hj(x):
             (x1,x2) = (x-ones([dimx,1]), x+ones([dimx,1]) if len(lqn_ps)<2 else x_ave)
             z_ave = array([sum(c)/5 for c in array(msmts[-5:]).T]).T
             (H1, H2) = (H, getH(z_ave, x2)) 
             (x1, x2) = ([x1 for i in range(n_msmt)],[x2 for i in range(n_msmt)])
             hj = (H2 - H1)/(to_size(x2,dimx,n_msmt) - to_size(x1,dimx,n_msmt))
-          #  print("hj,dh,dx,x = " + str((hj.shape, hj[0], (H2-H1)[0],array(x2[0]).T-array(x1[0]).T, x)))
             return hj 
         Hx = lambda x: dot(H, x)
         priors = update_ekf(ekfs[host], msmts[-1:], None, None, Hj, Hx)[1]
-        history.append(priors[-1])
-      #  print("priors[-1],msmt = " + str((priors[-1], msmts[-1:][-1][-1][-5:])))
         return to_size(priors[-1][-1], 1, dimx) if len(priors[-1]) else zeros([dimx,1])
     test_pca(100, predfn, False)
 
