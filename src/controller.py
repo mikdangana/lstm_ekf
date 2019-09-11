@@ -555,7 +555,7 @@ def monitor_host(host):
 def run_test_pca_kf():
     (host, history) = ("", [])
     ekfs[host] = [build_ekf([], history)]
-    def predfn(msmts): 
+    def predfn(msmts, lqn_ps = None): 
         priors = update_ekf(ekfs[host], msmts)[1]
         return to_size(priors[-1], msmts.shape[1], msmts.shape[0])
     test_pca(100, predfn)

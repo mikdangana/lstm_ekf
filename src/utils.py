@@ -275,7 +275,6 @@ def quantize(v, n = 1):
     return round(v, n)
 
 
-
 def test_pca(ns = 100, predfn = None, dopca = True):
     (sz, n, d, lqn_p0, lqn_p1, y1s, ms) = (24, 10, 1, [], [], [], [])
     lqn_ps = [[random()*ns for i in range(3)] for y in range(2)]
@@ -294,16 +293,18 @@ def test_pca(ns = 100, predfn = None, dopca = True):
 
 
 def msmt(y, ns, sz, lqn_ps):
-    return [random()*0.046+5*lqn_ps[y][0] for i in range(sz)]
+    return [(random()*0.05+5)*lqn_ps[y][0] for i in range(sz)]
+
 
 
 def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
+    predfn(ys[0], lqn_ps[0])
     for lqn_p, y, i in zip(lqn_ps, ys, range(len(ys))):
-        pca_y = quantize(getpca(len(lqn_p), y))
-        noise = array([[random()*0.001 for i in range(sz)] for j in range(n)]) 
+        pca_y = most_sig_pca(len(lqn_p), y)
+        noise = array([[random()*0.001*i for i in r] for r in y]) 
         if dopca:
-            y1 = predfn(y) if predfn else y1 + noise
-            pca_y1 = quantize(getpca(len(lqn_p), y1))
+            y1 = predfn(y) if predfn else y + noise
+            pca_y1 = most_sig_pca(len(lqn_p), y1)
         else:
             ystart = i-len(y) if i>len(y) else 0
             pstart = i-len(lqn_p) if i>len(lqn_p) else 0
@@ -315,6 +316,13 @@ def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
             lqn_p1.append((dot(pca_y1.T,ms[-d][0])+ms[-d][1]) if dopca else y1)
             lqn_p0.append(dot(pca_y.T, m) + c)
 
+
+def pad(y):
+    return concatenate((array(y), zeros(array(y).shape)))
+
+
+def most_sig_pca(ncol, y):
+    return concatenate((getpca(1, pad(y).T).T, zeros([ncol-1,2*len(y)]))).T
 
 
 def save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d):

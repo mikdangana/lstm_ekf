@@ -17,6 +17,10 @@ The EKF is used here to track system performance parameters and tune resource an
 
 # How to run
 
+# If anaconda is available
+* conda install pip
+# If tensorflow is not installed
+* pip install tensorflow
 * pip install filterpy
 * make
 
