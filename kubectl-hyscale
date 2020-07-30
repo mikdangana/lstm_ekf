@@ -1,0 +1,4 @@
+#!/bin/sh
+DIR=`dirname $0`
+export PYTHONPATH=$PYTHONPATH:$DIR/src
+python3 $DIR/src/controller.py
