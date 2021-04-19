@@ -423,7 +423,6 @@ def createHj(model, X, xinit):
         return Hj
     return hjacobian
 
-
     p = array([zeros(n_msmt)]).T #array([predict_coeffs(model,y,X)[-1]]).T
     logger.info("p,y = " + str((p,y)))
     def H(x):

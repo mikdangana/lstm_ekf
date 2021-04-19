@@ -1,11 +1,11 @@
 import os, re, sys, traceback
-import yaml, logging, logging.handlers
+import yaml, logging, logging.handlers, csv
 import pickle, subprocess
 from functools import reduce
 from math import floor
 from numpy import array, resize, zeros, float32, matmul, identity, shape
 from numpy import ones, dot, divide, subtract, size, append, transpose
-from numpy import gradient, mean, std, outer, vstack, concatenate
+from numpy import gradient, mean, std, outer, vstack, concatenate, savetxt
 from numpy.linalg import inv, lstsq
 from random import random
 from scipy import stats
@@ -22,6 +22,7 @@ logging.basicConfig(filename='lstm_ekf.log',
 state_file = "lstm_ekf.state"
 procs = []
 cmd_range = None
+pickle_dump_csv = True
 
 
 def os_run(cmd):
@@ -128,6 +129,13 @@ def pickleadd(filename, value):
 
 def pickledump(filename, value):
     try:
+        if pickle_dump_csv:
+            #savetxt("{}.csv".format(filename), array(value))
+            with open("{}.csv".format(filename), "w+") as cf:
+                for r in value:
+                    for i in range(len(r)):
+                       cf.write("{}{}".format(r[i], "," if i<len(r)-1 else "\n"))
+                cf.close()
         with open(filename, 'wb') as f:
             return pickle.dump(value, f)
     except(FileNotFoundError, pickle.PicklingError):
@@ -280,6 +288,11 @@ def test_pca(ns = 100, predfn = None, dopca = True):
     lqn_ps = [[random()*ns for i in range(3)] for y in range(2)]
     lqn_ps = [lqn_ps[floor(i/(ns/2))] for i in range(ns)]
     ys = [array([msmt(y,ns,sz,lqn_ps) for j in range(n)]) for y in range(ns)]
+    return test_pca_basic(ns, predfn, dopca, lqn_ps, ys)
+
+
+def test_pca_basic(ns = 100, predfn = None, dopca = True, lqn_ps = [], ys = []):
+    (sz, n, d, lqn_p0, lqn_p1, y1s, ms) = (24, 10, 1, [], [], [], [])
     run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca)
     if not dopca:
         (lqn_p1, y1s) = (scale(lqn_p1, lqn_ps), scale(y1s, lqn_ps))
@@ -298,8 +311,9 @@ def msmt(y, ns, sz, lqn_ps):
 
 
 def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
-    predfn(ys[0], lqn_ps[0])
+    predfn(ys[0], lqn_ps[0]) if predfn and not dopca else None
     for lqn_p, y, i in zip(lqn_ps, ys, range(len(ys))):
+        print("run_pca_tests().lqn_p = {}, y = {}".format(len(lqn_p), y))
         pca_y = most_sig_pca(len(lqn_p), y)
         noise = array([[random()*0.001*i for i in r] for r in y]) 
         if dopca:
@@ -312,6 +326,7 @@ def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
         y1s.append(y1)
         (m, c) = solve_linear_pca(lqn_p, pca_y)
         ms.append((m, c))
+        print("run_pca_tests().pca_y1 = {}, pca_y = {}, ms = {}".format(pca_y1, pca_y, ms))
         if (len(ms) > d-1):
             lqn_p1.append((dot(pca_y1.T,ms[-d][0])+ms[-d][1]) if dopca else y1)
             lqn_p0.append(dot(pca_y.T, m) + c)
@@ -350,8 +365,45 @@ def scale(src, tgt):
     return array([array(list(map(rng, zip(range(len(v)),v)))) for v in src])
 
 
+def to_float(s):
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    return s
+
+
+def test_pca_csv(fname):
+        (r, rows, hdrs) = (-1, {}, [])
+        with open(fname) as f:
+            rdr = csv.reader(f, delimiter=' ')
+            for row in rdr:
+                r = r + 1
+                if r > 0:
+                    row = row[0].split(',')
+                    for c in range(len(row)):
+                        if r == 1:
+                            hdrs.append(row[c])
+                            rows[hdrs[c]] = []
+                        else:
+                            rows[hdrs[c]].append(to_float(row[c]))
+        (xcol, ycol, y1col) = ('$uAppP', '$fGet_n', '$fGet')
+        ys = list(zip(rows[ycol], rows[ycol]))
+        (zs, ks) = (zeros((10,len(ys[0]))), range(len(ys)))
+        ys = [array(ys[r-10:r] if r>10 else rows[ycol][0]+zs) for r in ks]
+        #print("test_pca_csv().ys = " + str(ys[0:20]))
+        #exit(0)
+        xs = [[a for j in range(1)] for a,b in zip(rows[xcol], rows[xcol])]
+        predfn = lambda y: ys[rows[ycol].index(y[0][0])]
+        perr = test_pca_basic(len(rows[ycol]), predfn, True, xs, ys)
+        print("test_pca_csv(): % err = {}".format(perr))
+
+
 if __name__ == "__main__":
     if "--testpca" in sys.argv:
         test_pca()
+    elif "--testpcacsv" in sys.argv:
+        f = sys.path[0] + "/../data/2LayerVaryParam2-2LayerVaryParam1.csv"
+        test_pca_csv(f)
     else:
         test_miscellaneous()

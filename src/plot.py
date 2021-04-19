@@ -6,6 +6,8 @@ from getopt import getopt, GetoptError
 from pandas import DataFrame
 from surface3d import plotsurface
 from utils import *
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import pandas as pd
@@ -13,7 +15,7 @@ import pickle, re
 import pylab
 
 
-fig_file = None
+fig_file = "plot.png"
 
 
 def load(n):

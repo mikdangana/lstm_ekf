@@ -22,7 +22,9 @@ deprovision-cmds:
 
 search-endpoint: "http://<application-host>:8878/searchremote?q=*:*"
 
-db-endpoint: "http://<application-host>:8878/fetchremote?q="
+db-endpoint: "http://localhost:5{0:03}/nodes/register"
+register-nodes: "http://localhost:5{0:03}/nodes/register"
+register-subnets: "http://localhost:5{0:03}/nodes/registersubnet"
 
 db-endpoint2: "http://<application-host>:8878/fetchRemote?q="
 
