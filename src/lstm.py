@@ -18,16 +18,6 @@ logger = logging.getLogger("Lstm")
 
 
 
-def to_size(data, width, entries = n_entries):
-    input = array(data)
-    if width > 0:
-        input.resize(width, entries)
-    else:
-        input.resize(int(input.shape[1]/entries)*input.shape[0], entries)
-        logger.debug("data = " + str(data) + ", input = " + str(shape(input.T)))
-    input = input.T
-    return input
-
 
 def repeat(x, n):
     return array(list(map(lambda i: x, range(n))))

@@ -23,6 +23,7 @@ state_file = "lstm_ekf.state"
 procs = []
 cmd_range = None
 pickle_dump_csv = True
+n_entries = 3
 
 
 def os_run(cmd):
@@ -295,7 +296,8 @@ def test_pca_basic(ns = 100, predfn = None, dopca = True, lqn_ps = [], ys = []):
     (sz, n, d, lqn_p0, lqn_p1, y1s, ms) = (24, 10, 1, [], [], [], [])
     run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca)
     if not dopca:
-        (lqn_p1, y1s) = (scale(lqn_p1, lqn_ps), scale(y1s, lqn_ps))
+        (lqn_p1, lqn_ps, y1s) = (lqn_p1, lqn_ps, array(y1s))
+        #(lqn_p1, y1s) = (scale(lqn_p1, lqn_ps), scale(y1s, lqn_ps))
     save_pca_info(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, d)
     err = sum([sum(abs(p-p1.T[0])) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)
     p = sum([sum(abs(array(p))) for p,p1 in zip(lqn_ps,lqn_p1)])/len(lqn_ps)
@@ -313,8 +315,8 @@ def msmt(y, ns, sz, lqn_ps):
 def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
     predfn(ys[0], lqn_ps[0]) if predfn and not dopca else None
     for lqn_p, y, i in zip(lqn_ps, ys, range(len(ys))):
-        print("run_pca_tests().lqn_p = {}, y = {}".format(len(lqn_p), y))
-        pca_y = most_sig_pca(len(lqn_p), y)
+        #print("run_pca_tests().lqn_p = {}, y = {}".format(len(lqn_p), y))
+        (pca_y, pca_y1) = (most_sig_pca(len(lqn_p), y), [])
         noise = array([[random()*0.001*i for i in r] for r in y]) 
         if dopca:
             y1 = predfn(y) if predfn else y + noise
@@ -322,14 +324,16 @@ def run_pca_tests(lqn_ps, ys, y1s, ms, lqn_p0, lqn_p1, sz, n, d, predfn, dopca):
         else:
             ystart = i-len(y) if i>len(y) else 0
             pstart = i-len(lqn_p) if i>len(lqn_p) else 0
-            y1 = predfn(ys[ystart:i+1], lqn_ps[pstart:i+1])
+            y1 = predfn(array(ys[ystart:i+1]), array(lqn_ps[pstart:i+1]))[0]
+            #print("run_pca_tests().y1 = {}, ys = {}, lqn_ps = {}".format(y1, ys[ystart:i+1], lqn_ps[pstart:i+1]))
         y1s.append(y1)
-        (m, c) = solve_linear_pca(lqn_p, pca_y)
-        ms.append((m, c))
-        print("run_pca_tests().pca_y1 = {}, pca_y = {}, ms = {}".format(pca_y1, pca_y, ms))
-        if (len(ms) > d-1):
-            lqn_p1.append((dot(pca_y1.T,ms[-d][0])+ms[-d][1]) if dopca else y1)
+        (m, c) = solve_linear_pca(lqn_p, pca_y1)
+        #print("run_pca_tests().pca_y1 = {}, pca_y = {}".format(pca_y1, pca_y))
+        if (len(ms) >= d):
+            y1 = array([[y1[0]]])
+            lqn_p1.append(dot(pca_y1.T,ms[-d][0])+ms[-d][1] if dopca else y1)
             lqn_p0.append(dot(pca_y.T, m) + c)
+        ms.append((m, c))
 
 
 def pad(y):
@@ -373,7 +377,19 @@ def to_float(s):
     return s
 
 
-def test_pca_csv(fname):
+def to_size(data, width, entries = n_entries):
+    input = array(data)
+    if width > 0:
+        input.resize(width, entries)
+    else:
+        input.resize(int(input.shape[1]/entries)*input.shape[0], entries)
+        logger.debug("data = " + str(data) + ", input = " + str(shape(input.T)))
+    input = input.T
+    return input
+
+
+def test_pca_csv(fname, xcol = '$uAppP', ycol = '$fGet_n', y1col = '$fGet',
+                 predfn = None, dopca = True):
         (r, rows, hdrs) = (-1, {}, [])
         with open(fname) as f:
             rdr = csv.reader(f, delimiter=' ')
@@ -387,15 +403,12 @@ def test_pca_csv(fname):
                             rows[hdrs[c]] = []
                         else:
                             rows[hdrs[c]].append(to_float(row[c]))
-        (xcol, ycol, y1col) = ('$uAppP', '$fGet_n', '$fGet')
         ys = list(zip(rows[ycol], rows[ycol]))
         (zs, ks) = (zeros((10,len(ys[0]))), range(len(ys)))
         ys = [array(ys[r-10:r] if r>10 else rows[ycol][0]+zs) for r in ks]
-        #print("test_pca_csv().ys = " + str(ys[0:20]))
-        #exit(0)
         xs = [[a for j in range(1)] for a,b in zip(rows[xcol], rows[xcol])]
-        predfn = lambda y: ys[rows[ycol].index(y[0][0])]
-        perr = test_pca_basic(len(rows[ycol]), predfn, True, xs, ys)
+        predfn = predfn if predfn else lambda y: ys[rows[ycol].index(y[0][0])]
+        perr = test_pca_basic(len(rows[ycol]), predfn, dopca, xs, ys)
         print("test_pca_csv(): % err = {}".format(perr))
 
 
@@ -403,7 +416,8 @@ if __name__ == "__main__":
     if "--testpca" in sys.argv:
         test_pca()
     elif "--testpcacsv" in sys.argv:
-        f = sys.path[0] + "/../data/2LayerVaryParam2-2LayerVaryParam1.csv"
-        test_pca_csv(f)
+        #f = sys.path[0] + "/../data/2LayerVaryParam2-2LayerVaryParam1.csv"
+        f = sys.path[0] + "/../data/mackey_glass_time_series.csv"
+        test_pca_csv(f, 'P', 'P')
     else:
         test_miscellaneous()

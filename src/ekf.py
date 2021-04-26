@@ -5,9 +5,9 @@ import config as cfg
 import math
 import yaml, logging, logging.handlers
 import matplotlib.pyplot as plt
-from filterpy.kalman import ExtendedKalmanFilter
+from filterpy.kalman import ExtendedKalmanFilter, KalmanFilter, UnscentedKalmanFilter, CubatureKalmanFilter, MerweScaledSigmaPoints, JulierSigmaPoints
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, dot, divide, subtract
+from numpy import ones, dot, divide, subtract, eye
 from numpy.linalg import inv
 from functools import reduce
 from random import random
@@ -15,6 +15,7 @@ from datetime import *
 
 
 logger = logging.getLogger("Kalman_Filter")
+kf_type = "EKF"
 
 
 # Test the accuracy of an EKF using the provide measurement data
@@ -55,7 +56,12 @@ def ekf_predict(ekf):
 def get_ekf(ekf):
     while isinstance(ekf, list) or isinstance(ekf, tuple):
         ekf = ekf[0]
-    return ekf if isinstance(ekf, ExtendedKalmanFilter) else ekf['ekf']
+    if kf_type == "UKF":
+        return ekf if isinstance(ekf, UnscentedKalmanFilter) else ekf['ekf']
+    elif kf_type == "KF":
+        return ekf if isinstance(ekf, KalmanFilter) else ekf['ekf']
+    else:
+        return ekf if isinstance(ekf, ExtendedKalmanFilter) else ekf['ekf']
 
 
 def mean_accuracy(ekf, indices, state):
@@ -88,9 +94,31 @@ def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx):
     global n_msmt
     global dimx
     (dimx, n_msmt) = (dx, nmsmt)
-    ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    #ekf.x = zeros([dimx, 1])
-    #ekf.__init__(dimx, n_msmt)
+    if kf_type == "UKF":
+        #pts = MerweScaledSigmaPoints(4, alpha=.1, beta=2., kappa=-1)
+        pts = JulierSigmaPoints(4)
+        def fx(x, dt):
+            # state transition function - predict next state based
+            # on constant velocity model x = vt + x_0
+            F = np.array([[1, dt, 0, 0],
+                          [0, 1, 0, 0],
+                          [0, 0, 1, dt],
+                          [0, 0, 0, 1]], dtype=float)
+            return np.dot(F, x)
+   
+        def h(x):
+            # measurement function - convert state into a measurement
+            # where measurements are [x_pos, y_pos]
+            return np.array([x[0], x[2]])
+   
+        ekf = UnscentedKalmanFilter(dim_x=4,dim_z=2,dt=.1,hx=h,fx=fx,points=pts)
+    elif kf_type == "KF":
+        ekf = KalmanFilter(dim_x=4,dim_z=2)
+        ekf.x = eye(4)
+        #ekf = KalmanFilter(dim_x = dimx, dim_z = n_msmt)
+        #(ekf.P, ekf.R, ekf.Q) = (eye(dimx), eye(dimx)*.1, eye(n_msmt)*.1)
+    else:
+        ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
     if len(coeffs):
         coeffs = array(coeffs).flatten()
         if n_coeff == dimx * 2 + n_msmt:
@@ -101,7 +129,7 @@ def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx):
             ekf.Q = read2d(coeffs, dimx, 0, dimx*dimx)
             ekf.F = read2d(coeffs, dimx, dimx*dimx, dimx*dimx*2)
             r = read2d(coeffs, n_msmt, -n_msmt*n_msmt, n_coeff)
-        logger.info("ekf.Q="+str(ekf.Q) + ", ekf.F = " + str(ekf.F) + ", r = " + str(r))
+        logger.info("ekf.Q={}, F = {}, r = {}".format(ekf.Q, ekf.F, r))
         return update_ekf(ekf, z_data, r, linear_consts)
     return update_ekf(ekf, z_data)
 
@@ -120,7 +148,14 @@ def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None, H=None):
             ekf = get_ekf(ekf)
             ekf.predict()
             priors[j].append(ekf.x_prior)
-            ekf.update(z, hjacobian, h, R if len(shape(R)) else ekf.R)
+            if kf_type == "UKF":
+                z = [z[0][0], z[1][0]]
+                ekf.update(z)
+            elif kf_type == "KF":
+                z = [z[0][0], z[1][0]]
+                ekf.update(z)
+            else:
+                ekf.update(z, hjacobian, h, R if len(shape(R)) else ekf.R)
     logger.info("priors,z_data,ekfs = " + str((priors, z_data,len(ekfs))))
     return (ekf, priors)
 
@@ -186,5 +221,16 @@ def test_zdata(generators, n):
 
 
 if __name__ == "__main__":
-    test_ekf()
+    kf_type = sys.argv[sys.argv.index("-t")+1] if "-t" in sys.argv else kf_type
+    if "--testpcacsv" in sys.argv:
+        (pca, f) = ("true", sys.path[0]+"/../data/mackey_glass_time_series.csv")
+        f = sys.argv[sys.argv.index("-f")+1] if "-f" in sys.argv else f
+        ekf = build_ekf([], [])
+        def predfn(msmts, lqn_ps = None): 
+            priors = update_ekf(ekf, msmts)[1]
+            return to_size(priors[-1], msmts.shape[1], msmts.shape[0])
+        pca = sys.argv[sys.argv.index("-pc")+1] if "-pc" in sys.argv else pca
+        test_pca_csv(f, 'P', 'P', None, predfn, dopca=pca.lower() == "true")
+    else:
+        test_ekf()
     print("Output in lstm_ekf.log")
