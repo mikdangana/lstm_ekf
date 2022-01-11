@@ -225,12 +225,14 @@ if __name__ == "__main__":
     if "--testpcacsv" in sys.argv:
         (pca, f) = ("true", sys.path[0]+"/../data/mackey_glass_time_series.csv")
         f = sys.argv[sys.argv.index("-f")+1] if "-f" in sys.argv else f
+        pca = sys.argv[sys.argv.index("-pc")+1] if "-pc" in sys.argv else pca
+        xcol = sys.argv[sys.argv.index("-x")+1] if "-x" in sys.argv else 'P'
+        ycol = sys.argv[sys.argv.index("-y")+1] if "-y" in sys.argv else 'P'
         ekf = build_ekf([], [])
         def predfn(msmts, lqn_ps = None): 
             priors = update_ekf(ekf, msmts)[1]
             return to_size(priors[-1], msmts.shape[1], msmts.shape[0])
-        pca = sys.argv[sys.argv.index("-pc")+1] if "-pc" in sys.argv else pca
-        test_pca_csv(f, 'P', 'P', None, predfn, dopca=pca.lower() == "true")
+        test_pca_csv(f, xcol, ycol, None, predfn, dopca=pca.lower() == "true")
     else:
         test_ekf()
     print("Output in lstm_ekf.log")

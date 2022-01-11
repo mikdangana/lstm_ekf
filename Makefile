@@ -98,6 +98,9 @@ testmodeltrack: clean
 	@echo "\nTesting LSTM LQN Model Tracking...\n"
 	python src/controller.py --track-model --n_msmt 7 --n_lstm_out 7 --n_entries 1
 
+testpca: clean
+	@echo "\nTesting PCA Tracking...\n"
+	python src/ekf.py --testpcacsv -f cpu1.csv -x '"{pod=""carts-b4d4ffb5c-kq6xg""}"' -y '"{pod=""carts-b4d4ffb5c-kq6xg""}"'
 
 run:
 	@echo "\nRunning Controller...\n"
