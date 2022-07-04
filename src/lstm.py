@@ -138,7 +138,6 @@ class Lstm:
 
 
     def RNN(self, x, weights, biases):
-
         with self.graph1.as_default():
             if use_logistic_regression:
                 cell = tf.nn.rnn_cell.LSTMCell(n_features,activation=tf.nn.relu)
@@ -157,8 +156,7 @@ class Lstm:
                 ", weights="+str(weights) +", biases = "+ str(biases) +
                 "= model = " + str(model))
 
-            # there are n_entries outputs but
-            # we only want the last output
+            # there are n_entries outputs but we only want the last output
             return model
 
 
@@ -201,20 +199,20 @@ class Lstm:
                                                                  model-Y))
                 optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
                 def update_weights():
-                    weights['out'] = tf.multiply(1.5*weights['out'], 
+                    weights['out'] = tf.add(weights['out'], 
                                                  tf.divide(model-Y, Y)[:-2])
                 nobackprop_op = tf.function(lambda: update_weights())()
             logger.debug("model = " + str(model))
-            train_op = nobackprop_op #optimizer.minimize(cost) #nobackprop_op
+            train_op = optimizer.minimize(cost) #nobackprop_op
         return self.train_and_test(model, X, Y, train_op, cost, epochs, labelfn)
 
 
     def tune_logistic_model(self):
         X = tf.placeholder(tf.float32, [n_entries, n_msmt, n_features])
         Y = tf.placeholder(tf.float32, [1, n_lstm_out, n_classes])
-        weights = tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
+        wghts=tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
         biases = tf.Variable(tf.ones([n_entries, n_msmt, n_classes])*1e-2)
-        model = self.RNN(X, weights, biases)
+        model = self.RNN(X, wghts, biases)
         labels = tf.nn.softmax(Y)
         labels = tf.reshape(Y, [n_lstm_out, n_classes])
         logits = tf.reshape(model, [n_lstm_out, n_classes])
@@ -282,7 +280,7 @@ class Lstm:
 
     def train_and_test(self, model, X, Y, train_op, cost, epochs, 
                        labelfn=test_labels):
-        (test_data, costs, labels, start) = ([], [], [], time_ns())
+        (test_data, costs, labels) = ([], [], [])
 
         # Training
         for epoch in range(epochs):
@@ -290,15 +288,17 @@ class Lstm:
             batch_data = [feature_classes(l[1:]) for l in labels]
             train_data = batch_data[0 : int(len(batch_data)*0.75)]
             test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
+            start = time_ns()
             self.train(train_op, cost, X, Y, train_data, costs, epoch, model)
             logger.debug("Epoch = " + str((epoch,epochs)) + ", train_data = " +
                 str(shape(train_data)) + ", test_data = " + 
                 str(shape(test_data)) + ", costs = " + str(costs) + ", time = "+
                 str(time_ns() - start) + " ns")
             pickleconc("train_costs.pickle", [costs[-1:]])
-            if iscostconverged(costs):
-                logger.debug("converged, window = " + str(costs[-5:]))
-                break
+            pickleconc("train_times.pickle", [[time_ns()-start]])
+            #if iscostconverged(costs):
+            #    logger.debug("converged, window = " + str(costs[-5:]))
+            #    break
          
         return self.test(model, X, Y, test_data)
 
