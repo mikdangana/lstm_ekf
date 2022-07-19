@@ -23,7 +23,7 @@ n_lqn_out = 7
 n_classes = int((5 - (-5)) / 1)
 n_features = n_classes
 # number of units in RNN cell
-n_hidden = 2
+n_hidden = 3
 learn_rate = 0.01
 learn_threshold = 1e-4
 n_epochs = 8
@@ -47,7 +47,6 @@ predictive = True
 active_monitor = True
 search = None
 replace = None
-
 
 logger = logging.getLogger("Config")
     

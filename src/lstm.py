@@ -28,7 +28,7 @@ def repeat(x, n):
 def test_labels(model, X = None, labels = [], sample_size = 10):
     noise = 0.0 
     #symbols = [lambda x: 0 if x<50 else 1, math.exp, math.sin] 
-    symbols = [math.exp] #, math.sin] 
+    symbols = [math.sin, math.exp] 
     for i in range(sample_size):
         for s in range(len(symbols)):
             def measure(msmt):
@@ -46,10 +46,11 @@ def test_labels(model, X = None, labels = [], sample_size = 10):
     logger.debug("test_labels.labels = " + str(labels))
     return labels
 
+
 def weights_biases(base, n_lstm_out):
     base = array(base) + 1e-9
-    logger.info("bias = " + str(base))
-    weights = {'out':tf.Variable(tf.ones([n_hidden, n_lstm_out]),name='w')}
+    weights = {'out':tf.convert_to_tensor(ones([n_hidden, n_lstm_out]),
+                                          name='w', dtype=tf.float32)}
     if n_msmt == n_coeff / 3:
         bias = zeros([n_entries, n_lstm_out]) + \
                 array(base).reshape(n_entries, n_lstm_out)
@@ -58,6 +59,10 @@ def weights_biases(base, n_lstm_out):
         i = zeros(n_msmt * n_msmt) + base
         bias = array([concatenate((i,i,i)) for x in range(n_entries)])
         biases = {'out': tf.convert_to_tensor(bias, name='b', dtype=tf.float32)}
+    logger.info("ws,bs = " + str(([v['out'].shape for v in \
+                                   [weights, biases]])))
+    weights['out'] = tf.Variable(weights['out'])
+    biases['out'] = tf.Variable(biases['out'])
     return [weights, biases]
 
 
@@ -110,7 +115,8 @@ def best_label(model, X, labelfn):
     labels = labelfn(model, X, [])
     batch_data = [feature_classes(l[1:]) for l in labels]
     #batch_data.sort(key = lambda b: b[0], reverse=True)
-    logger.info("best_label.batch_data,labels = " + str((array(batch_data).shape,batch_data, labels)))
+    logger.info("best_label.batch_data,labels = " + 
+                str((array(batch_data).shape,batch_data, labels)))
     logger.info("best_label = " + str(batch_data[0][1]))
     return array(batch_data[0][1]).T
 
@@ -172,10 +178,13 @@ class Lstm:
     def tf_run(self, *args, **kwargs):
         self.sess = self.sess if self.sess else tf.Session(graph=self.graph1)
         sess = self.sess
+        tf.enable_eager_execution()
         with self.graph1.as_default():
             if not self.train_writer:
                 self.train_writer = tf.summary.FileWriter('lstm_ekf.train', 
                                                           sess.graph)
+            sess.run(tf.compat.v1.global_variables_initializer())
+            sess.run(tf.initialize_all_variables())
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
             return sess.run(*args, **kwargs) 
@@ -183,13 +192,11 @@ class Lstm:
 
     #Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
     def tune_model(self, epochs = n_epochs, labelfn = test_labels, cost = None,
-        nout = n_lstm_out):
-
-        with tf.variable_scope("model", 
-                               reuse=tf.AUTO_REUSE), self.graph1.as_default():
+                   nout = n_lstm_out):
+        with tf.variable_scope("model", reuse=tf.AUTO_REUSE), \
+             self.graph1.as_default():
             X = tf.placeholder("float", [n_entries, n_msmt])
             Y = tf.placeholder("float", [n_entries, nout])
-            logger.debug("X,Y = " + str((X,Y)))
             if use_logistic_regression:
                 [X, Y, model, cost, optimizer] = tune_logistic_model()
             else:
@@ -198,16 +205,13 @@ class Lstm:
                 cost = cost(model,X) if cost else tf.reduce_mean(tf.square(
                                                                  model-Y))
                 optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
-                def update_weights():
-                    weights['out'] = tf.add(weights['out'], 
-                                                 tf.divide(model-Y, Y)[:-2])
-                nobackprop_op = tf.function(lambda: update_weights())()
-            logger.debug("model = " + str(model))
-            train_op = optimizer.minimize(cost) #nobackprop_op
-        return self.train_and_test(model, X, Y, train_op, cost, epochs, labelfn)
+            logger.debug("X,Y,model = " + str((X, Y, model)))
+            train_op = optimizer.minimize(cost)
+        return self.train_and_test(model, X, Y, train_op, cost, epochs, \
+                                   labelfn)
 
 
-    def tune_logistic_model(self):
+    def tune_logistic_model(self)
         X = tf.placeholder(tf.float32, [n_entries, n_msmt, n_features])
         Y = tf.placeholder(tf.float32, [1, n_lstm_out, n_classes])
         wghts=tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
@@ -222,10 +226,11 @@ class Lstm:
 
 
     def train(self, train_op, cost, X, Y, train_data, costs, epoch, model):
+        logger.info("train.train_data = " + str((len(train_data))))
         with self.graph1.as_default():
             tf.summary.scalar('cost', cost)
             for (i,(batch_x,batch_y)) in zip(range(len(train_data)),train_data):
-                 # Remember 'cost' contains the model
+                # Remember 'cost' contains the model
                 ops = [train_op, cost, tf.summary.merge_all(), model] 
                 logger.debug("batchx,batchy = " + str((batch_x, batch_y)))
                 _, total_cost, summa, output = self.tf_run(ops, feed_dict = 

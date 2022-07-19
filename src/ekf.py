@@ -1,13 +1,15 @@
 from config import *
+from lstm import Lstm
 from utils import *
 from plot import *
 import config as cfg
 import math
 import yaml, logging, logging.handlers
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from filterpy.kalman import ExtendedKalmanFilter, KalmanFilter, UnscentedKalmanFilter, CubatureKalmanFilter, MerweScaledSigmaPoints, JulierSigmaPoints
 from numpy import array, resize, zeros, float32, matmul, identity, shape
-from numpy import ones, dot, divide, subtract, eye
+from numpy import ones, dot, divide, subtract, eye, reshape
 from numpy.linalg import inv
 from functools import reduce
 from random import random
@@ -68,7 +70,8 @@ def mean_accuracy(ekf, indices, state):
     (ekf,(m,c)) =(ekf['ekf'],ekf['mc']) if isinstance(ekf,dict) else (ekf,(1,0))
     nums = lambda ns : [n[0] for n in ns]
     prior = lambda kf: nums(m * get_ekf(kf).x_prior + c)
-    acc = lambda pt: 1 - abs(pt[1] - pt[0]) #/abs(pt[0]+1e-9) #norms[pt[2] % len(norms)]
+    acc = lambda pt: 1 - abs(pt[1] - pt[0]) 
+                         #/abs(pt[0]+1e-9) #norms[pt[2] % len(norms)]
     accuracies = [acc(p) for p in zip(state, prior(ekf), range(len(state)))]
     logger.info("accuracies = " + str(accuracies) + \
         ", state = " + str(state) + ", prior = " + str(prior(ekf)))
@@ -95,6 +98,21 @@ def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx):
     global dimx
     (dimx, n_msmt) = (dx, nmsmt)
     if kf_type == "UKF":
+        ekf = build_unscented_ekf()
+    elif kf_type == "KF":
+        ekf = KalmanFilter(dim_x=4,dim_z=2)
+        ekf.x = eye(4)
+        #ekf = KalmanFilter(dim_x = dimx, dim_z = n_msmt)
+        #(ekf.P, ekf.R, ekf.Q) = (eye(dimx), eye(dimx)*.1, eye(n_msmt)*.1)
+    else:
+        ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
+    if len(coeffs):
+        r = update_ekf_coeffs(ekf, coeffs)
+        return update_ekf(ekf, z_data, r, linear_consts)
+    return update_ekf(ekf, z_data)
+
+
+def build_unscented_ekf():
         #pts = MerweScaledSigmaPoints(4, alpha=.1, beta=2., kappa=-1)
         pts = JulierSigmaPoints(4)
         def fx(x, dt):
@@ -112,14 +130,10 @@ def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx):
             return np.array([x[0], x[2]])
    
         ekf = UnscentedKalmanFilter(dim_x=4,dim_z=2,dt=.1,hx=h,fx=fx,points=pts)
-    elif kf_type == "KF":
-        ekf = KalmanFilter(dim_x=4,dim_z=2)
-        ekf.x = eye(4)
-        #ekf = KalmanFilter(dim_x = dimx, dim_z = n_msmt)
-        #(ekf.P, ekf.R, ekf.Q) = (eye(dimx), eye(dimx)*.1, eye(n_msmt)*.1)
-    else:
-        ekf = ExtendedKalmanFilter(dim_x = dimx, dim_z = n_msmt)
-    if len(coeffs):
+        return ekf
+
+
+def update_ekf_coeffs(ekf, coeffs):
         coeffs = array(coeffs).flatten()
         if n_coeff == dimx * 2 + n_msmt:
             ekf.Q = symmetric(array(coeffs[0:dimx]))
@@ -130,16 +144,16 @@ def build_ekf(coeffs, z_data, linear_consts=None, nmsmt = n_msmt, dx =dimx):
             ekf.F = read2d(coeffs, dimx, dimx*dimx, dimx*dimx*2)
             r = read2d(coeffs, n_msmt, -n_msmt*n_msmt, n_coeff)
         logger.info("ekf.Q={}, F = {}, r = {}".format(ekf.Q, ekf.F, r))
-        return update_ekf(ekf, z_data, r, linear_consts)
-    return update_ekf(ekf, z_data)
+        return r
 
 
 def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None, H=None):
+    logger.info("z_data = " + str((array(z_data).shape)))
     (ekfs, start) = (ekf if isinstance(ekf, list) else [ekf], datetime.now())
     priors = [[] for i in ekfs]
     for i,z in zip(range(len(z_data)), z_data):
-        z = array(z)
-        z.resize(n_msmt, 1)
+        z = reshape(z, (array(z).size, 1))
+        logger.info("z = " + str((len(z), z.size, array(z).shape)))
         h = lambda x: H(x) if H else m_c[0]*x if m_c else x
         def hjacobian(x):
             m = m_c[0] if m_c else 1
@@ -156,7 +170,8 @@ def update_ekf(ekf, z_data, R=None, m_c = None, Hj=None, H=None):
                 ekf.update(z)
             else:
                 ekf.update(z, hjacobian, h, R if len(shape(R)) else ekf.R)
-    logger.info("priors,z_data,ekfs = " + str((priors, z_data,len(ekfs))))
+    logger.info("priors,z_data,ekfs = " + str((array(priors).shape, 
+                                               array(z_data).shape,len(ekfs))))
     return (ekf, priors)
 
 
@@ -233,6 +248,6 @@ if __name__ == "__main__":
             priors = update_ekf(ekf, msmts)[1]
             return to_size(priors[-1], msmts.shape[1], msmts.shape[0])
         test_pca_csv(f, xcol, ycol, None, predfn, dopca=pca.lower() == "true")
-    else:
-        test_ekf()
+    elif "--testlstm" in sys.argv:
+        test_lstm_ekf()
     print("Output in lstm_ekf.log")
