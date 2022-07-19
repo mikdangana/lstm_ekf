@@ -30,6 +30,9 @@ The EKF is used here to track system performance parameters and tune resource an
 # Run EKF tests
 * make testekf
 
+# Run EKF-based LSTM Train tests
+* make testekf-lstm
+
 # Run LSTM tests
 * make testltm
 

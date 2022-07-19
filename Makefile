@@ -74,6 +74,11 @@ testekf: clean
 	python src/ekf.py
 
 
+testekf-lstm: clean
+	@echo "\nTesting EKF-based weight updates for LSTM training...\n"
+	python src/ekf.py --testlstm
+
+
 testlstm: clean
 	@echo "\nTesting LSTM Unit...\n"
 	python src/lstm.py
