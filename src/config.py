@@ -48,6 +48,10 @@ active_monitor = True
 search = None
 replace = None
 
+ecount = 0
+Gf = 3 # KF-based NN-weight computation frequency
+Hf = 3 # EKF H matrix computation frequency
+
 logger = logging.getLogger("Config")
     
 

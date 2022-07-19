@@ -192,7 +192,7 @@ class Lstm:
 
     #Returns a trained LSTM model for R & Q Kalman Filter coefficient prediction
     def tune_model(self, epochs = n_epochs, labelfn = test_labels, cost = None,
-                   nout = n_lstm_out):
+                   nout = n_lstm_out, grad_fn = None, hist=[[], [], []]):
         with tf.variable_scope("model", reuse=tf.AUTO_REUSE), \
              self.graph1.as_default():
             X = tf.placeholder("float", [n_entries, n_msmt])
@@ -205,13 +205,28 @@ class Lstm:
                 cost = cost(model,X) if cost else tf.reduce_mean(tf.square(
                                                                  model-Y))
                 optimizer = tf.train.MomentumOptimizer(learn_rate, 0.9)
+                def update_weights(x, y): # x=input, y=labels
+                    ws, bs = [v for v in [weights['out'], biases['out']]]
+                    logger.info("weights,biases = " + \
+                                str((weights['out'],biases['out'], x, y, ws, bs)))
+                    hist[0].append(Y-model) # -ve cost
+                    hist[1].append(ws)
+                    hist[2].append(bs)
+                    if not grad_fn == None:
+                        ws, bs = grad_fn(hist[0], hist[1], hist[2], X,Y,x,y)
+                    logger.info("tf.ws,bs = " + str((ws, bs)))
+                    if not ws == None and not bs == None:
+                        weights['out'].assign(ws) 
+                        biases['out'].assign(bs)
+                        logger.info("Assigned tf.ws,bs = " + str((ws, bs)))
+                grad_op = tf.function(update_weights)
             logger.debug("X,Y,model = " + str((X, Y, model)))
             train_op = optimizer.minimize(cost)
         return self.train_and_test(model, X, Y, train_op, cost, epochs, \
-                                   labelfn)
+                                   labelfn, grad_fn=update_weights)
 
 
-    def tune_logistic_model(self)
+    def tune_logistic_model(self):
         X = tf.placeholder(tf.float32, [n_entries, n_msmt, n_features])
         Y = tf.placeholder(tf.float32, [1, n_lstm_out, n_classes])
         wghts=tf.Variable(tf.truncated_normal([n_entries,n_features,n_classes]))
@@ -225,12 +240,22 @@ class Lstm:
         return [X, Y, model, cost, optimizer]
 
 
-    def train(self, train_op, cost, X, Y, train_data, costs, epoch, model):
+    def train(self, train_op, cost, X, Y, train_data, costs, epoch, model,\
+              grad_fn=None):
         logger.info("train.train_data = " + str((len(train_data))))
         with self.graph1.as_default():
             tf.summary.scalar('cost', cost)
             for (i,(batch_x,batch_y)) in zip(range(len(train_data)),train_data):
-                # Remember 'cost' contains the model
+                if not grad_fn == None and i % Gf > 0 and i > 0:
+                  x = tf.Variable(batch_x if use_logistic_regression else 
+                                  to_size(batch_x,n_msmt, n_entries), 
+                                  [n_entries,n_msmt,n_features], dtype=tf.float32)
+                  y = tf.Variable(batch_y if use_logistic_regression else 
+                                  to_size(batch_y, n_lstm_out, n_entries),
+                                  [1, n_lstm_out, n_classes], dtype=tf.float32)
+                  grad_fn(batch_x, batch_y)
+                  continue
+                 # Remember 'cost' contains the model
                 ops = [train_op, cost, tf.summary.merge_all(), model] 
                 logger.debug("batchx,batchy = " + str((batch_x, batch_y)))
                 _, total_cost, summa, output = self.tf_run(ops, feed_dict = 
@@ -284,7 +309,7 @@ class Lstm:
 
 
     def train_and_test(self, model, X, Y, train_op, cost, epochs, 
-                       labelfn=test_labels):
+                       labelfn=test_labels, grad_fn=None):
         (test_data, costs, labels) = ([], [], [])
 
         # Training
@@ -294,7 +319,8 @@ class Lstm:
             train_data = batch_data[0 : int(len(batch_data)*0.75)]
             test_data = test_data + batch_data[int(len(batch_data)*0.75) : ]
             start = time_ns()
-            self.train(train_op, cost, X, Y, train_data, costs, epoch, model)
+            self.train(train_op, cost, X, Y, train_data, costs, epoch, model,\
+                       grad_fn=grad_fn)
             logger.debug("Epoch = " + str((epoch,epochs)) + ", train_data = " +
                 str(shape(train_data)) + ", test_data = " + 
                 str(shape(test_data)) + ", costs = " + str(costs) + ", time = "+

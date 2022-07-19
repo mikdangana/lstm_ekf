@@ -205,6 +205,55 @@ def get_generators():
     return generators
 
 
+def estimate_weights():
+  ekf, H, ecount = build_ekf([], [], nmsmt=n_coeff, dx=n_coeff), None, 0
+  def estimator(zs, ws, bs, X, Y, xval, yval):
+    global ecount
+    logger.info("estimate_w.z,w,b,xv,yv = "+str((zs,ws,bs,xval.shape,yval.shape)))
+    x, y, ecount = ws[-1], zs[-1], ecount + 1
+    if x==None or y == None:
+        logger.info("Nil x,y = " + str((x,y)))
+        return ws[-1], bs[-1]
+    logger.info("estimate_w.y, x, yval = " + str((y, x, bs[-1], yval.T)))
+    x, y1 = tf.reshape(x, y.shape), y
+    xt = tf.transpose(x)
+    with tf.Session() as sess:
+        yval = np.reshape(yval, Y.shape)
+        sess.run(tf.compat.v1.global_variables_initializer())
+        x = sess.run(y1, feed_dict = {X: xval, Y: yval})
+        logger.info("ncost = x.xt = " + str((x, np.matmul(x, x.T))))
+        try:
+            return weights_from_ekf(x, y1, bs)
+        except:
+          logger.error("Error while computing H, probably x.xT not invertible")
+          logger.info("returning ws,bs = " + str((ws[-1], bs[-1])))
+          return ws[-1], bs[-1]
+  return estimator
+
+
+def weights_from_ekf(x, y1, bs):
+        if None==H or ecount % Hf == 0:
+            H = np.matmul(np.matmul(y1.eval(), x.T),
+                          np.linalg.inv(np.matmul(x, x.T)))
+        #H =tf.matmul(tf.matmul(y1, xt), tf.linalg.inv(tf.matmul(x, xt))).eval()
+        logger.info("estimate_w.H = " + str((H.shape, x.shape, 
+                    x.size, n_entries, n_lstm_out, n_msmt, n_coeff, H)))
+        Hx = lambda xi: [logger.info("Hx.xi = "+str((H.shape, 
+            xi.reshape((n_entries, int(dimx/n_entries))).shape, xi.shape))), 
+            np.matmul(H, xi.reshape((n_entries, int(dimx/n_entries)))).
+               reshape(dimx, 1)][1]
+        logger.info("estimate_w.z_data = " + str(([zs[-1].eval()][0].shape)))
+        _, w = update_ekf(ekf, [x], R=None, m_c = None, Hj=None, H=Hx)
+        logger.info("estimate_w.w = " + str((w)))
+        return w, bs[-1]
+
+
+def test_lstm_ekf():
+    tf.enable_eager_execution()
+    #ws, bs = grad_fn(x, ws, bs, Hj)
+    Lstm().tune_model(15, grad_fn=estimate_weights())
+
+
 # Testbed to unit test EKF using hand-crafted data
 def test_ekf(generate_coeffs = test_coeffs):
     generators = get_generators()
@@ -250,4 +299,6 @@ if __name__ == "__main__":
         test_pca_csv(f, xcol, ycol, None, predfn, dopca=pca.lower() == "true")
     elif "--testlstm" in sys.argv:
         test_lstm_ekf()
+    else:
+        test_ekf()
     print("Output in lstm_ekf.log")
